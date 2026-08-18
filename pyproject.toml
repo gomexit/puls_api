@@ -1,0 +1,28 @@
+[project]
+name = "puls-api"
+version = "0.1.0"
+description = "PULS backend - FastAPI AUTH/USERS/SESSIONS module"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.32.0",
+    "pydantic>=2.9.0",
+    "pydantic-settings>=2.5.0",
+    "sqlalchemy>=2.0.35",
+    "oracledb>=2.4.1",
+    "argon2-cffi>=23.1.0",
+    "python-multipart>=0.0.12",
+    "apscheduler>=3.10.4",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.3.0",
+    "pytest-mock>=3.14.0",
+    "httpx>=0.27.0",
+    "mypy>=1.11.0",
+    "ruff>=0.6.9",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

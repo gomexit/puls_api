@@ -1,0 +1,59 @@
+from app.repositories.audit_repository import AuditRepository
+
+
+class AuditAction:
+    LOGIN_USPESAN = "LOGIN_USPESAN"
+    LOGIN_NEUSPESAN = "LOGIN_NEUSPESAN"
+    NALOG_ZAKLJUCAN = "NALOG_ZAKLJUCAN"
+    PROMENA_LOZINKE = "PROMENA_LOZINKE"
+    POTVRDA_TELEFONA = "POTVRDA_TELEFONA"
+    PROMENA_TELEFONA = "PROMENA_TELEFONA"
+    ZAHTEV_RESET_LOZINKE = "ZAHTEV_RESET_LOZINKE"
+    ZAHTEV_RESET_LOZINKE_GRESKA = "ZAHTEV_RESET_LOZINKE_GRESKA"
+    RESET_LOZINKE = "RESET_LOZINKE"
+    LOGOUT = "LOGOUT"
+    SESIJA_OPOZVANA_NOVOM_PRIJAVOM = "SESIJA_OPOZVANA_NOVOM_PRIJAVOM"
+    PROVISIONING_USPESAN = "PROVISIONING_USPESAN"
+    PROVISIONING_GRESKA = "PROVISIONING_GRESKA"
+    # Modul IDEJE
+    IDEA_CREATED = "IDEA_CREATED"
+    IDEA_UPDATED = "IDEA_UPDATED"
+    IDEA_STATUS_CHANGED = "IDEA_STATUS_CHANGED"
+    IDEA_HR_SCORE_SET = "IDEA_HR_SCORE_SET"
+    IDEA_CYCLE_CREATED = "IDEA_CYCLE_CREATED"
+    IDEA_CYCLE_STATUS_CHANGED = "IDEA_CYCLE_STATUS_CHANGED"
+    # Modul ANKETE
+    SURVEY_CREATED = "SURVEY_CREATED"
+    SURVEY_UPDATED = "SURVEY_UPDATED"
+    SURVEY_STATUS_CHANGED = "SURVEY_STATUS_CHANGED"
+    SURVEY_DEADLINE_EXTENDED = "SURVEY_DEADLINE_EXTENDED"
+    SURVEY_SUBMITTED = "SURVEY_SUBMITTED"
+
+
+class AuditService:
+    def __init__(self, repository: AuditRepository, izvor: str):
+        self.repository = repository
+        self.izvor = izvor
+
+    def log(
+        self,
+        sifra_akcije: str,
+        korisnik_id: int | None = None,
+        platni_broj: str | None = None,
+        tip_entiteta: str | None = None,
+        entitet_id: str | None = None,
+        detalji: str | None = None,
+        ip_adresa: str | None = None,
+        korisnicki_agent: str | None = None,
+    ) -> None:
+        self.repository.add(
+            korisnik_id=korisnik_id,
+            platni_broj=platni_broj,
+            sifra_akcije=sifra_akcije,
+            izvor=self.izvor,
+            tip_entiteta=tip_entiteta,
+            entitet_id=entitet_id,
+            detalji=detalji,
+            ip_adresa=ip_adresa,
+            korisnicki_agent=korisnicki_agent,
+        )
