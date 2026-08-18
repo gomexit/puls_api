@@ -7,7 +7,8 @@ from fastapi.testclient import TestClient
 from app.core.exceptions import ForbiddenError
 from app.dependencies import roles as roles_module
 from app.dependencies.auth import AuthContext, get_current_context
-from app.dependencies.roles import require_admin_or_hr, require_roles
+from app.dependencies.portal_auth import require_portal_admin_or_hr
+from app.dependencies.roles import require_roles
 from app.main import app
 from app.api.v1 import admin_ideas as admin_ideas_module
 from app.api.v1 import ideas as ideas_module
@@ -48,7 +49,7 @@ def test_employee_gets_forbidden_on_admin_route(client):
     def _raise_forbidden():
         raise ForbiddenError()
 
-    app.dependency_overrides[require_admin_or_hr] = _raise_forbidden
+    app.dependency_overrides[require_portal_admin_or_hr] = _raise_forbidden
     resp = client.get("/api/v1/admin/idea-cycles")
     assert resp.status_code == 403
     assert resp.json()["error"]["code"] == "FORBIDDEN"
@@ -56,7 +57,7 @@ def test_employee_gets_forbidden_on_admin_route(client):
 
 def test_hr_can_access_admin_route(client):
     hr_user = make_korisnik(id=1, obavezna_promena_lozinke="N", telefon_potvrdjen="D")
-    app.dependency_overrides[require_admin_or_hr] = lambda: hr_user
+    app.dependency_overrides[require_portal_admin_or_hr] = lambda: hr_user
 
     class _StubAdminService:
         def list_cycles(self):

@@ -87,6 +87,14 @@ class ForbiddenError(PulsApiError):
     message = "Nemate pravo pristupa."
 
 
+class InvalidServiceCredentialsError(PulsApiError):
+    # Namerno generička poruka: ne otkriva da li servisni ključ nedostaje,
+    # je pogrešan ili nije konfigurisan. Sam ključ se nikada ne loguje ni vraća.
+    code = "INVALID_SERVICE_CREDENTIALS"
+    status_code = status.HTTP_401_UNAUTHORIZED
+    message = "Nevažeći servisni kredencijali."
+
+
 # --- Modul IDEJE ---
 class NoActiveIdeaCycleError(PulsApiError):
     code = "NO_ACTIVE_IDEA_CYCLE"

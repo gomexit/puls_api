@@ -74,6 +74,13 @@ class SurveyAdminService:
             tip = self.repo.add_type(
                 AnketaTip(sifra=sifra, naziv=naziv, aktivan="D", datum_kreiranja=datetime.datetime.now())
             )
+            self.audit_service.log(
+                AuditAction.SURVEY_TYPE_CREATED,
+                korisnik_id=actor.id,
+                platni_broj=actor.platni_broj,
+                tip_entiteta="ANKETA_TIP",
+                entitet_id=tip.sifra,
+            )
             self.db.commit()
             return tip
         except IntegrityError as exc:
@@ -99,6 +106,13 @@ class SurveyAdminService:
             if aktivan is not None:
                 tip.aktivan = "D" if aktivan else "N"
             tip.datum_izmene = datetime.datetime.now()
+            self.audit_service.log(
+                AuditAction.SURVEY_TYPE_UPDATED,
+                korisnik_id=actor.id,
+                platni_broj=actor.platni_broj,
+                tip_entiteta="ANKETA_TIP",
+                entitet_id=tip.sifra,
+            )
             self.db.commit()
             return tip
         except Exception:

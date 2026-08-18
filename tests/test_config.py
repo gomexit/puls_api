@@ -12,6 +12,7 @@ def prod(**overrides) -> Settings:
         db_user="u",
         db_password="pw",
         db_dsn="host:1521/svc",
+        portal_service_key="k" * 40,
     )
     base.update(overrides)
     return Settings(_env_file=None, **base)
@@ -49,3 +50,27 @@ def test_development_allows_console_and_empty_secrets():
     s = Settings(_env_file=None, app_env="development")
     assert not s.is_production
     assert s.sms_provider == "console"
+    assert s.portal_service_key == ""
+
+
+def test_production_empty_service_key_rejected():
+    with pytest.raises(ValidationError):
+        prod(portal_service_key="")
+
+
+def test_production_short_service_key_rejected():
+    with pytest.raises(ValidationError):
+        prod(portal_service_key="k" * 31)
+
+
+def test_production_service_key_min_length_accepted():
+    assert prod(portal_service_key="k" * 32).is_production
+
+
+def test_service_key_value_not_in_error_message():
+    try:
+        prod(portal_service_key="s3cr3t")
+    except ValidationError as exc:
+        assert "s3cr3t" not in str(exc)
+    else:  # pragma: no cover
+        pytest.fail("Expected ValidationError")

@@ -5,10 +5,15 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 PRODUCTION_ENV = "production"
 MIN_PRODUCTION_PEPPER_LENGTH = 32
+MIN_PRODUCTION_SERVICE_KEY_LENGTH = 32
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
+    # hide_input_in_errors: pydantic inače u ValidationError ubaci ceo input (uklj. tajne
+    # kao PORTAL_SERVICE_KEY / RESET_CODE_PEPPER). Isključujemo da tajne ne cure u greške/logove.
+    model_config = SettingsConfigDict(
+        env_file=".env", env_file_encoding="utf-8", extra="ignore", hide_input_in_errors=True
+    )
 
     app_name: str = "PULS API"
     app_env: str = "development"
@@ -29,6 +34,10 @@ class Settings(BaseSettings):
     min_password_length_fallback: int = 8
 
     sms_provider: str = "console"
+
+    # Servisni ključ GMX Portala za server-to-server (trusted-service) pozive ADMIN ruta.
+    # Nikada nije u kodu; u produkciji obavezan i najmanje MIN_PRODUCTION_SERVICE_KEY_LENGTH karaktera.
+    portal_service_key: str = ""
 
     audit_source: str = "API"
 
@@ -54,6 +63,10 @@ class Settings(BaseSettings):
             )
         if not (self.db_user and self.db_password and self.db_dsn):
             raise ValueError("U produkciji DB_USER, DB_PASSWORD i DB_DSN moraju biti postavljeni.")
+        if len(self.portal_service_key) < MIN_PRODUCTION_SERVICE_KEY_LENGTH:
+            raise ValueError(
+                f"U produkciji PORTAL_SERVICE_KEY mora imati najmanje {MIN_PRODUCTION_SERVICE_KEY_LENGTH} karaktera."
+            )
         return self
 
 

@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.core.exceptions import ValidationBusinessError
 from app.db.session import get_db
-from app.dependencies.roles import require_admin_or_hr
+from app.dependencies.portal_auth import require_portal_admin_or_hr
 from app.models.korisnik import Korisnik
 from app.schemas.survey import (
     AdminCiljOut,
@@ -45,7 +45,7 @@ def _type_out(tip) -> SurveyTypeResponse:
 # ------------------------------------------------------------------ survey types
 @router.get("/survey-types", response_model=SurveyTypeListResponse)
 def list_survey_types(
-    _: Korisnik = Depends(require_admin_or_hr),
+    _: Korisnik = Depends(require_portal_admin_or_hr),
     service: SurveyAdminService = Depends(get_survey_admin_service),
 ) -> SurveyTypeListResponse:
     return SurveyTypeListResponse(items=[_type_out(t) for t in service.list_types()])
@@ -54,7 +54,7 @@ def list_survey_types(
 @router.post("/survey-types", response_model=SurveyTypeResponse, status_code=status.HTTP_201_CREATED)
 def create_survey_type(
     payload: SurveyTypeCreateRequest,
-    actor: Korisnik = Depends(require_admin_or_hr),
+    actor: Korisnik = Depends(require_portal_admin_or_hr),
     service: SurveyAdminService = Depends(get_survey_admin_service),
 ) -> SurveyTypeResponse:
     return _type_out(service.create_type(actor, payload.sifra, payload.naziv))
@@ -64,7 +64,7 @@ def create_survey_type(
 def patch_survey_type(
     type_code: str,
     payload: SurveyTypePatchRequest,
-    actor: Korisnik = Depends(require_admin_or_hr),
+    actor: Korisnik = Depends(require_portal_admin_or_hr),
     service: SurveyAdminService = Depends(get_survey_admin_service),
 ) -> SurveyTypeResponse:
     return _type_out(service.update_type(actor, type_code, payload.naziv, payload.aktivan))
@@ -74,7 +74,7 @@ def patch_survey_type(
 @router.post("/surveys", response_model=AdminSurveyCreatedResponse, status_code=status.HTTP_201_CREATED)
 def create_survey(
     payload: AdminSurveyCreateRequest,
-    actor: Korisnik = Depends(require_admin_or_hr),
+    actor: Korisnik = Depends(require_portal_admin_or_hr),
     service: SurveyAdminService = Depends(get_survey_admin_service),
 ) -> AdminSurveyCreatedResponse:
     anketa = service.create_survey(actor, payload)
@@ -89,7 +89,7 @@ def list_surveys(
     datum_do: datetime.datetime | None = Query(default=None),
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=PAGE_SIZE_DEFAULT, ge=1, le=PAGE_SIZE_MAX),
-    _: Korisnik = Depends(require_admin_or_hr),
+    _: Korisnik = Depends(require_portal_admin_or_hr),
     service: SurveyAdminService = Depends(get_survey_admin_service),
 ) -> AdminSurveyListResponse:
     # Isti timezone ugovor kao za admin datume + logicki redosled filtera.
@@ -190,7 +190,7 @@ def _build_admin_detail(service: SurveyAdminService, anketa) -> AdminSurveyDetai
 @router.get("/surveys/{survey_id}", response_model=AdminSurveyDetailResponse)
 def get_survey(
     survey_id: int,
-    _: Korisnik = Depends(require_admin_or_hr),
+    _: Korisnik = Depends(require_portal_admin_or_hr),
     service: SurveyAdminService = Depends(get_survey_admin_service),
 ) -> AdminSurveyDetailResponse:
     anketa = service.get_survey(survey_id)
@@ -201,7 +201,7 @@ def get_survey(
 def update_survey(
     survey_id: int,
     payload: AdminSurveyUpdateRequest,
-    actor: Korisnik = Depends(require_admin_or_hr),
+    actor: Korisnik = Depends(require_portal_admin_or_hr),
     service: SurveyAdminService = Depends(get_survey_admin_service),
 ) -> AdminSurveyDetailResponse:
     anketa = service.update_survey(actor, survey_id, payload)
@@ -212,7 +212,7 @@ def update_survey(
 def change_survey_status(
     survey_id: int,
     payload: AdminSurveyStatusRequest,
-    actor: Korisnik = Depends(require_admin_or_hr),
+    actor: Korisnik = Depends(require_portal_admin_or_hr),
     service: SurveyAdminService = Depends(get_survey_admin_service),
 ) -> AdminSurveyDetailResponse:
     anketa = service.change_status(actor, survey_id, payload.status)
@@ -223,7 +223,7 @@ def change_survey_status(
 def extend_survey_deadline(
     survey_id: int,
     payload: AdminSurveyExtendRequest,
-    actor: Korisnik = Depends(require_admin_or_hr),
+    actor: Korisnik = Depends(require_portal_admin_or_hr),
     service: SurveyAdminService = Depends(get_survey_admin_service),
 ) -> AdminSurveyDetailResponse:
     anketa = service.extend_deadline(actor, survey_id, payload.datum_zavrsetka)

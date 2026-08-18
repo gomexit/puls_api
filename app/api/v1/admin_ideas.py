@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
-from app.dependencies.roles import require_admin_or_hr
+from app.dependencies.portal_auth import require_portal_admin_or_hr
 from app.models.idea_ciklus import IdeaCiklus
 from app.models.ideja import Ideja
 from app.models.korisnik import Korisnik
@@ -63,7 +63,7 @@ def _to_admin_idea_response(ideja: Ideja) -> AdminIdeaResponse:
 # --- Ciklusi ---
 @router.get("/idea-cycles", response_model=AdminCycleListResponse)
 def list_idea_cycles(
-    _: Korisnik = Depends(require_admin_or_hr),
+    _: Korisnik = Depends(require_portal_admin_or_hr),
     service: IdeaAdminService = Depends(get_idea_admin_service),
 ) -> AdminCycleListResponse:
     cycles = service.list_cycles()
@@ -73,7 +73,7 @@ def list_idea_cycles(
 @router.post("/idea-cycles", response_model=AdminCycleResponse, status_code=status.HTTP_201_CREATED)
 def create_idea_cycle(
     payload: AdminCycleCreateRequest,
-    actor: Korisnik = Depends(require_admin_or_hr),
+    actor: Korisnik = Depends(require_portal_admin_or_hr),
     service: IdeaAdminService = Depends(get_idea_admin_service),
 ) -> AdminCycleResponse:
     ciklus = service.create_cycle(
@@ -86,7 +86,7 @@ def create_idea_cycle(
 def patch_idea_cycle(
     cycle_id: int,
     payload: AdminCyclePatchRequest,
-    actor: Korisnik = Depends(require_admin_or_hr),
+    actor: Korisnik = Depends(require_portal_admin_or_hr),
     service: IdeaAdminService = Depends(get_idea_admin_service),
 ) -> AdminCycleResponse:
     ciklus = service.change_cycle_status(actor, cycle_id, payload.status)
@@ -102,7 +102,7 @@ def list_ideas(
     platni_broj: str | None = Query(default=None),
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=PAGE_SIZE_DEFAULT, ge=1, le=PAGE_SIZE_MAX),
-    _: Korisnik = Depends(require_admin_or_hr),
+    _: Korisnik = Depends(require_portal_admin_or_hr),
     service: IdeaAdminService = Depends(get_idea_admin_service),
 ) -> AdminIdeaListResponse:
     items, total = service.list_ideas(
@@ -119,7 +119,7 @@ def list_ideas(
 @router.get("/ideas/{idea_id}", response_model=AdminIdeaResponse)
 def get_idea(
     idea_id: int,
-    _: Korisnik = Depends(require_admin_or_hr),
+    _: Korisnik = Depends(require_portal_admin_or_hr),
     service: IdeaAdminService = Depends(get_idea_admin_service),
 ) -> AdminIdeaResponse:
     return _to_admin_idea_response(service.get_idea(idea_id))
@@ -129,7 +129,7 @@ def get_idea(
 def change_idea_status(
     idea_id: int,
     payload: AdminIdeaStatusRequest,
-    actor: Korisnik = Depends(require_admin_or_hr),
+    actor: Korisnik = Depends(require_portal_admin_or_hr),
     service: IdeaAdminService = Depends(get_idea_admin_service),
 ) -> AdminIdeaResponse:
     ideja = service.change_idea_status(actor, idea_id, payload.status)
@@ -140,7 +140,7 @@ def change_idea_status(
 def set_hr_score(
     idea_id: int,
     payload: AdminIdeaHrScoreRequest,
-    actor: Korisnik = Depends(require_admin_or_hr),
+    actor: Korisnik = Depends(require_portal_admin_or_hr),
     service: IdeaAdminService = Depends(get_idea_admin_service),
 ) -> AdminIdeaResponse:
     ideja = service.set_hr_score(actor, idea_id, payload.hr_ocena)
