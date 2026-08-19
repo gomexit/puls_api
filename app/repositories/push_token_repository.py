@@ -41,7 +41,7 @@ class PushTokenRepository:
                 PushToken.uredjaj_id != uredjaj_id,
                 PushToken.aktivan == "D",
             )
-            .values(AKTIVAN="N", DATUM_DEAKTIVACIJE=now, DATUM_IZMENE=now)
+            .values(aktivan="N", datum_deaktivacije=now, datum_izmene=now)
         )
         # 2) Deaktiviraj isti token registrovan drugde (isti fizicki uredjaj, drugi nalog).
         self.db.execute(
@@ -51,7 +51,7 @@ class PushTokenRepository:
                 PushToken.korisnik_id != korisnik_id,
                 PushToken.aktivan == "D",
             )
-            .values(AKTIVAN="N", DATUM_DEAKTIVACIJE=now, DATUM_IZMENE=now)
+            .values(aktivan="N", datum_deaktivacije=now, datum_izmene=now)
         )
 
         existing = self._get_for_user_device(korisnik_id, uredjaj_id)
@@ -89,7 +89,7 @@ class PushTokenRepository:
                 PushToken.uredjaj_id == uredjaj_id,
                 PushToken.aktivan == "D",
             )
-            .values(AKTIVAN="N", DATUM_DEAKTIVACIJE=now, DATUM_IZMENE=now)
+            .values(aktivan="N", datum_deaktivacije=now, datum_izmene=now)
         )
         return res.rowcount or 0
 
@@ -98,7 +98,7 @@ class PushTokenRepository:
         res = self.db.execute(
             update(PushToken)
             .where(PushToken.korisnik_id == korisnik_id, PushToken.aktivan == "D")
-            .values(AKTIVAN="N", DATUM_DEAKTIVACIJE=now, DATUM_IZMENE=now)
+            .values(aktivan="N", datum_deaktivacije=now, datum_izmene=now)
         )
         return res.rowcount or 0
 
@@ -108,6 +108,6 @@ class PushTokenRepository:
         res = self.db.execute(
             update(PushToken)
             .where(PushToken.token_hash == token_hash, PushToken.aktivan == "D")
-            .values(AKTIVAN="N", DATUM_DEAKTIVACIJE=now, DATUM_IZMENE=now)
+            .values(aktivan="N", datum_deaktivacije=now, datum_izmene=now)
         )
         return res.rowcount or 0
