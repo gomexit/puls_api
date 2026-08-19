@@ -188,6 +188,39 @@ class SurveyTypeNotFoundError(PulsApiError):
     message = "Tip ankete nije pronađen."
 
 
+# --- Modul OBAVESTENJA ---
+class NotificationNotFoundError(PulsApiError):
+    # Generička poruka: isti odgovor za nepostojeće, tuđe, neobjavljeno, buduće,
+    # isteklo i arhivirano obaveštenje - ne otkriva postojanje tuđeg obaveštenja.
+    code = "NOTIFICATION_NOT_FOUND"
+    status_code = status.HTTP_404_NOT_FOUND
+    message = "Obaveštenje nije pronađeno ili više nije dostupno."
+
+
+class InvalidNotificationStatusTransitionError(PulsApiError):
+    code = "INVALID_NOTIFICATION_STATUS_TRANSITION"
+    status_code = status.HTTP_409_CONFLICT
+    message = "Nedozvoljena promena statusa obaveštenja."
+
+
+class NotificationEditNotAllowedError(PulsApiError):
+    code = "NOTIFICATION_EDIT_NOT_ALLOWED"
+    status_code = status.HTTP_409_CONFLICT
+    message = "Izmena obaveštenja je dozvoljena samo dok je u statusu DRAFT."
+
+
+class NotificationCategoryNotFoundError(PulsApiError):
+    code = "NOTIFICATION_CATEGORY_NOT_FOUND"
+    status_code = status.HTTP_404_NOT_FOUND
+    message = "Kategorija obaveštenja nije pronađena."
+
+
+class NotificationCategoryAlreadyExistsError(PulsApiError):
+    code = "NOTIFICATION_CATEGORY_ALREADY_EXISTS"
+    status_code = status.HTTP_409_CONFLICT
+    message = "Kategorija obaveštenja sa ovom šifrom već postoji."
+
+
 def register_exception_handlers(app: FastAPI) -> None:
     @app.exception_handler(PulsApiError)
     async def handle_puls_api_error(request: Request, exc: PulsApiError) -> JSONResponse:
