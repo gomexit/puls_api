@@ -14,3 +14,4 @@ uvicorn.pid
 firebase-service-account*.json
 *service-account*.json
 fcm-credentials*.json
+*-firebase-adminsdk-*.json
