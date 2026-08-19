@@ -365,6 +365,17 @@ class AdminNotificationStatsResponse(BaseModel):
     broj_procitanih: int
     broj_neprocitanih: int
     procenat_procitanih: float
+    # Aditivna push polja. NAPOMENA: push_sent = "FCM prihvatio poruku",
+    # NIJE potvrda da je poruka dostavljena uredjaju.
+    push_pending: int
+    push_sent: int
+    push_failed: int
+    push_skipped: int
+
+
+class AdminNotificationResendResponse(BaseModel):
+    notification_id: int
+    resent_count: int
 
 
 class AdminNotificationStatusRequest(BaseModel):

@@ -126,6 +126,15 @@ class FakeSessionRepository:
     def touch_activity(self, sesija: KorisnickaSesija) -> None:
         sesija.poslednja_aktivnost = datetime.datetime.now()
 
+    def has_active_session_for_device(self, korisnik_id, uredjaj_id, now) -> bool:
+        return any(
+            s.korisnik_id == korisnik_id
+            and s.uredjaj_id == uredjaj_id
+            and s.aktivna == "D"
+            and (s.datum_isteka is None or s.datum_isteka > now)
+            for s in self.sesije
+        )
+
 
 class FakeResetPasswordRepository:
     def __init__(self):
@@ -183,6 +192,61 @@ class FakeAuditService:
 
     def log(self, sifra_akcije: str, **kwargs) -> None:
         self.entries.append({"sifra_akcije": sifra_akcije, **kwargs})
+
+
+class FakePushTokenRepository:
+    """In-memory PULS_PUSH_TOKENI. Cuva se hash umesto oslanjanja na pun token u logu."""
+
+    def __init__(self):
+        # ključ (korisnik_id, uredjaj_id) -> dict(token, hash, aktivan, app_version)
+        self.tokens: dict[tuple[int, str], dict] = {}
+
+    @staticmethod
+    def _hash(token: str) -> str:
+        import hashlib
+
+        return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+    def get_active_for_user(self, korisnik_id: int):
+        for (kid, uredjaj_id), t in self.tokens.items():
+            if kid == korisnik_id and t["aktivan"] == "D":
+                return type("T", (), {"fcm_token": t["token"], "uredjaj_id": uredjaj_id, "korisnik_id": kid})()
+        return None
+
+    def upsert(self, korisnik_id, uredjaj_id, fcm_token, app_version):
+        h = self._hash(fcm_token)
+        for (kid, dev), t in self.tokens.items():
+            if kid == korisnik_id and dev != uredjaj_id:
+                t["aktivan"] = "N"
+            if t["hash"] == h and kid != korisnik_id:
+                t["aktivan"] = "N"
+        self.tokens[(korisnik_id, uredjaj_id)] = {
+            "token": fcm_token, "hash": h, "aktivan": "D", "app_version": app_version
+        }
+        return self.tokens[(korisnik_id, uredjaj_id)]
+
+    def deactivate_user_device(self, korisnik_id, uredjaj_id):
+        t = self.tokens.get((korisnik_id, uredjaj_id))
+        if t and t["aktivan"] == "D":
+            t["aktivan"] = "N"
+            return 1
+        return 0
+
+    def deactivate_all_for_user(self, korisnik_id):
+        n = 0
+        for (kid, _dev), t in self.tokens.items():
+            if kid == korisnik_id and t["aktivan"] == "D":
+                t["aktivan"] = "N"
+                n += 1
+        return n
+
+    def deactivate_token_hash(self, token_hash):
+        n = 0
+        for t in self.tokens.values():
+            if t["hash"] == token_hash and t["aktivan"] == "D":
+                t["aktivan"] = "N"
+                n += 1
+        return n
 
 
 class FakeSmsProvider(SmsProvider):

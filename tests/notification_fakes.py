@@ -105,6 +105,19 @@ class FakeNotificationRepo:
             return obav
         return None
 
+    def recipient_exists(self, notification_id, korisnik_id):
+        return any(
+            p.obavestenje_id == notification_id and p.korisnik_id == korisnik_id
+            for p in self.recipients
+        )
+
+    def unread_recipient_ids(self, notification_id):
+        return {
+            p.korisnik_id
+            for p in self.recipients
+            if p.obavestenje_id == notification_id and p.procitano == "N"
+        }
+
     def get_recipient_for_update(self, notification_id, korisnik_id):
         return next(
             (
@@ -212,6 +225,78 @@ class FakeNotificationRepo:
 
     def existing_recipient_ids(self, notification_id):
         return {p.korisnik_id for p in self.recipients if p.obavestenje_id == notification_id}
+
+
+class FakePushDeliveryRepo:
+    """In-memory PULS_PUSH_ISPORUKE za testove."""
+
+    def __init__(self):
+        self.rows: list[SimpleNamespace] = []
+
+    def existing_user_ids(self, obavestenje_id):
+        return {r.korisnik_id for r in self.rows if r.obavestenje_id == obavestenje_id}
+
+    def add_pending(self, obavestenje_id, korisnik_id, now):
+        r = SimpleNamespace(
+            id=_next_id(), obavestenje_id=obavestenje_id, korisnik_id=korisnik_id,
+            status="PENDING", broj_pokusaja=0, datum_sledeceg_pokusaja=now,
+            poslednji_error_code=None, datum_kreiranja=now, datum_poslednjeg_pokusaja=None,
+            datum_slanja=None, broj_ponovnih_slanja=0,
+        )
+        self.rows.append(r)
+        return r
+
+    def create_pending_for_recipients(self, obavestenje_id, korisnik_ids, now):
+        existing = self.existing_user_ids(obavestenje_id)
+        created = 0
+        for uid in korisnik_ids - existing:
+            self.add_pending(obavestenje_id, uid, now)
+            created += 1
+        return created
+
+    def requeue_unread(self, obavestenje_id, unread_user_ids, now):
+        seen = set()
+        affected = 0
+        for r in self.rows:
+            if r.obavestenje_id == obavestenje_id and r.korisnik_id in unread_user_ids:
+                seen.add(r.korisnik_id)
+                r.status = "PENDING"
+                r.broj_pokusaja = 0
+                r.datum_sledeceg_pokusaja = now
+                r.poslednji_error_code = None
+                r.datum_slanja = None
+                r.datum_poslednjeg_pokusaja = None
+                r.broj_ponovnih_slanja = (r.broj_ponovnih_slanja or 0) + 1
+                affected += 1
+        for uid in unread_user_ids - seen:
+            r = self.add_pending(obavestenje_id, uid, now)
+            r.broj_ponovnih_slanja = 1
+            affected += 1
+        return affected
+
+    def claim_ready_batch(self, now, limit):
+        ready = [
+            r for r in self.rows
+            if r.status == "PENDING"
+            and (r.datum_sledeceg_pokusaja is None or r.datum_sledeceg_pokusaja <= now)
+        ]
+        ready.sort(key=lambda r: (r.datum_sledeceg_pokusaja or now, r.id))
+        return ready[:limit]
+
+    def get(self, delivery_id):
+        return next((r for r in self.rows if r.id == delivery_id), None)
+
+    def stats_for_notification(self, obavestenje_id):
+        rows = [r for r in self.rows if r.obavestenje_id == obavestenje_id]
+        return {
+            "push_pending": sum(1 for r in rows if r.status == "PENDING"),
+            "push_sent": sum(1 for r in rows if r.status == "SENT"),
+            "push_failed": sum(1 for r in rows if r.status == "FAILED"),
+            "push_skipped": sum(1 for r in rows if r.status == "SKIPPED"),
+        }
+
+    def count_sent(self, obavestenje_id):
+        return sum(1 for r in self.rows if r.obavestenje_id == obavestenje_id and r.status == "SENT")
 
 
 class FakeNotificationTargetingRepo:

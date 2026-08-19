@@ -221,6 +221,14 @@ class NotificationCategoryAlreadyExistsError(PulsApiError):
     message = "Kategorija obaveštenja sa ovom šifrom već postoji."
 
 
+class PushTokenConflictError(PulsApiError):
+    # Konkurentna registracija istog fizickog tokena/uredjaja pogodila je
+    # UX_PUSH_TOKEN_AKTIVAN_HASH ili UX_PUSH_TOKEN_AKTIVAN_KOR. Bezbedno za retry.
+    code = "PUSH_TOKEN_CONFLICT"
+    status_code = status.HTTP_409_CONFLICT
+    message = "Registracija push tokena nije uspela zbog istovremene izmene. Pokušajte ponovo."
+
+
 def register_exception_handlers(app: FastAPI) -> None:
     @app.exception_handler(PulsApiError)
     async def handle_puls_api_error(request: Request, exc: PulsApiError) -> JSONResponse:

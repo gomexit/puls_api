@@ -25,6 +25,7 @@ from app.models.korisnik import Korisnik
 from app.repositories.audit_repository import AuditRepository
 from app.repositories.configuration_repository import ConfigurationRepository
 from app.repositories.korisnik_repository import KorisnikRepository
+from app.repositories.push_token_repository import PushTokenRepository
 from app.repositories.reset_password_repository import ResetPasswordRepository
 from app.repositories.session_repository import SessionRepository
 from app.services.audit_service import AuditAction, AuditService
@@ -67,6 +68,7 @@ class AuthService:
         reset_repository: ResetPasswordRepository | None = None,
         configuration_service: ConfigurationService | None = None,
         audit_service: AuditService | None = None,
+        push_token_repository: PushTokenRepository | None = None,
     ):
         self.db = db
         self.settings = get_settings()
@@ -74,6 +76,7 @@ class AuthService:
         self.korisnik_repository = korisnik_repository or KorisnikRepository(db)
         self.session_repository = session_repository or SessionRepository(db)
         self.reset_repository = reset_repository or ResetPasswordRepository(db)
+        self.push_token_repository = push_token_repository or PushTokenRepository(db)
         self.configuration_service = configuration_service or ConfigurationService(
             ConfigurationRepository(db)
         )
@@ -126,6 +129,9 @@ class AuthService:
             self.session_repository.revoke_active_sessions_for_user(
                 korisnik.id, REVOKE_REASON_NEW_LOGIN
             )
+            # Novi uredjaj: deaktiviraj sve prethodne FCM tokene (isti aktivan-uredjaj ugovor).
+            # Nov token se registruje kasnije kroz PUT /push/token. Ista transakcija kao login.
+            self.push_token_repository.deactivate_all_for_user(korisnik.id)
             self.audit_service.log(
                 AuditAction.SESIJA_OPOZVANA_NOVOM_PRIJAVOM,
                 korisnik_id=korisnik.id,
@@ -216,12 +222,14 @@ class AuthService:
             raise InvalidSessionError()
 
         if sesija.datum_isteka is not None and sesija.datum_isteka <= datetime.datetime.now():
-            self.session_repository.revoke_session(sesija, "ISTEKLA")
-            self.db.commit()
+            self._revoke_session_and_deactivate_token(sesija, sesija.korisnik_id, "ISTEKLA")
             raise SessionExpiredError()
 
         korisnik = self.korisnik_repository.get_by_id(sesija.korisnik_id)
         if korisnik is None:
+            self._revoke_session_and_deactivate_token(
+                sesija, sesija.korisnik_id, "NALOG_NIJE_VISE_VALIDAN"
+            )
             raise InvalidSessionError()
 
         if (
@@ -229,12 +237,25 @@ class AuthService:
             or korisnik.status_naloga != "OMOGUCEN"
             or korisnik.zakljucan == "D"
         ):
-            self.session_repository.revoke_session(sesija, "NALOG_NIJE_VISE_VALIDAN")
-            self.db.commit()
+            self._revoke_session_and_deactivate_token(sesija, korisnik.id, "NALOG_NIJE_VISE_VALIDAN")
             raise InvalidSessionError()
 
         self._maybe_touch_activity(sesija)
         return korisnik, sesija
+
+    def _revoke_session_and_deactivate_token(
+        self, sesija: KorisnickaSesija, korisnik_id: int, razlog: str
+    ) -> None:
+        """Sesija se poništava i FCM token tog uređaja deaktivira u JEDNOJ transakciji
+        (rollback poništava oboje ako bilo šta padne). Postojeći HTTP kodovi/ugovori
+        se ne menjaju - ovo je interni korak pre podizanja SessionExpired/InvalidSession."""
+        try:
+            self.session_repository.revoke_session(sesija, razlog)
+            self.push_token_repository.deactivate_user_device(korisnik_id, sesija.uredjaj_id)
+            self.db.commit()
+        except Exception:
+            self.db.rollback()
+            raise
 
     def _maybe_touch_activity(self, sesija: KorisnickaSesija) -> None:
         throttle = datetime.timedelta(minutes=5)
@@ -290,6 +311,8 @@ class AuthService:
     def logout(self, korisnik: Korisnik, sesija: KorisnickaSesija) -> None:
         try:
             self.session_repository.revoke_session(sesija, REVOKE_REASON_LOGOUT)
+            # Deaktivacija FCM tokena trenutnog uredjaja u ISTOJ transakciji kao logout.
+            self.push_token_repository.deactivate_user_device(korisnik.id, sesija.uredjaj_id)
             self.audit_service.log(
                 AuditAction.LOGOUT, korisnik_id=korisnik.id, platni_broj=korisnik.platni_broj
             )
@@ -397,6 +420,8 @@ class AuthService:
             self.session_repository.revoke_active_sessions_for_user(
                 korisnik.id, REVOKE_REASON_PASSWORD_RESET
             )
+            # Reset opoziva sve sesije -> deaktiviraj sve FCM tokene, ista transakcija.
+            self.push_token_repository.deactivate_all_for_user(korisnik.id)
 
             self.audit_service.log(
                 AuditAction.RESET_LOZINKE,

@@ -1,6 +1,6 @@
 import datetime
 
-from sqlalchemy import select, update
+from sqlalchemy import func, or_, select, update
 from sqlalchemy.orm import Session
 
 from app.models.korisnicka_sesija import KorisnickaSesija
@@ -13,6 +13,20 @@ class SessionRepository:
     def get_by_token_hash(self, token_hash: str) -> KorisnickaSesija | None:
         stmt = select(KorisnickaSesija).where(KorisnickaSesija.token_hash == token_hash)
         return self.db.execute(stmt).scalar_one_or_none()
+
+    def has_active_session_for_device(
+        self, korisnik_id: int, uredjaj_id: str, now: datetime.datetime
+    ) -> bool:
+        """True ako korisnik ima AKTIVNA='D' sesiju za dati uredjaj koja jos nije
+        istekla. Push worker koristi ovo da ne salje FCM uredjaju koji vise nema
+        vazecu sesiju (npr. logout na tom uredjaju posle registracije tokena)."""
+        stmt = select(func.count()).select_from(KorisnickaSesija).where(
+            KorisnickaSesija.korisnik_id == korisnik_id,
+            KorisnickaSesija.uredjaj_id == uredjaj_id,
+            KorisnickaSesija.aktivna == "D",
+            or_(KorisnickaSesija.datum_isteka.is_(None), KorisnickaSesija.datum_isteka > now),
+        )
+        return int(self.db.execute(stmt).scalar_one()) > 0
 
     def revoke_active_sessions_for_user(self, korisnik_id: int, razlog: str) -> None:
         now = datetime.datetime.now()

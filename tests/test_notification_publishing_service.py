@@ -16,6 +16,7 @@ from tests.notification_fakes import (
     FakeNotifDb,
     FakeNotificationRepo,
     FakeNotificationTargetingRepo,
+    FakePushDeliveryRepo,
     make_kategorija,
 )
 
@@ -34,6 +35,7 @@ def _service(repo=None, targeting=None, config=None):
             targeting_repository=targeting,
             audit_service=FakeAuditService(),
             configuration_service=config or FakeConfigService(),
+            push_delivery_repository=FakePushDeliveryRepo(),
             now_fn=lambda: FIXED_NOW,
         ),
         repo,

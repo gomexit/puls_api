@@ -10,3 +10,7 @@ venv/
 .idea/
 uvicorn.log
 uvicorn.pid
+# Firebase service-account (tajna) - nikada u repo
+firebase-service-account*.json
+*service-account*.json
+fcm-credentials*.json

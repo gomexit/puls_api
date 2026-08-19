@@ -19,6 +19,7 @@ from tests.notification_fakes import (
     FakeNotifDb,
     FakeNotificationRepo,
     FakeNotificationTargetingRepo,
+    FakePushDeliveryRepo,
     make_kategorija,
 )
 
@@ -113,6 +114,7 @@ def _wire_admin_service(repo, targeting=None):
         targeting_repository=targeting or FakeNotificationTargetingRepo(all_ids={1, 2}),
         audit_service=audit,
         configuration_service=FakeConfigService(),
+        push_delivery_repository=FakePushDeliveryRepo(),
         now_fn=lambda: FIXED_NOW,
     )
     return NotificationAdminService(
@@ -341,3 +343,28 @@ def test_list_category_filter_invalid_422(client):
         "/api/v1/admin/notifications", headers=_headers(), params={"category": "bad!sifra"}
     )
     assert resp.status_code == 422
+
+
+# ---------------------------------------------------- resend-unread (OBO + happy)
+def test_resend_unread_requires_obo(client, monkeypatch):
+    _use_portal(monkeypatch, FakePortalRepo([_admin_user()], {1: ["ADMIN"]}))
+    # bez zaglavlja -> 401 INVALID_SERVICE_CREDENTIALS
+    resp = client.post("/api/v1/admin/notifications/1/resend-unread")
+    assert resp.status_code == 401
+    assert resp.json()["error"]["code"] == "INVALID_SERVICE_CREDENTIALS"
+
+
+def test_resend_unread_happy_path(client):
+    from tests.notification_fakes import make_obavestenje, make_primalac
+
+    repo = FakeNotificationRepo()
+    repo.add_category(make_kategorija())
+    obav = repo.seed_notification(make_obavestenje(status="PUBLISHED"))
+    repo.seed_recipient(make_primalac(obav.id, 1, procitano="N"))
+    svc = _as_admin_with_service(repo)
+    svc.publishing.push_delivery.add_pending(obav.id, 1, FIXED_NOW).status = "SENT"
+    resp = client.post(
+        f"/api/v1/admin/notifications/{obav.id}/resend-unread", headers=_headers()
+    )
+    assert resp.status_code == 200
+    assert resp.json() == {"notification_id": obav.id, "resent_count": 1}

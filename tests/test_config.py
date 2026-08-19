@@ -74,3 +74,44 @@ def test_service_key_value_not_in_error_message():
         assert "s3cr3t" not in str(exc)
     else:  # pragma: no cover
         pytest.fail("Expected ValidationError")
+
+
+# --------------------------------------------------------------------- item 6: FCM
+def test_fcm_defaults_valid_when_disabled():
+    s = Settings(_env_file=None)
+    assert s.fcm_enabled is False
+    assert s.fcm_batch_size == 100
+    assert s.fcm_max_attempts == 5
+    assert s.fcm_worker_interval_seconds == 30
+
+
+@pytest.mark.parametrize("field", ["fcm_batch_size", "fcm_max_attempts", "fcm_worker_interval_seconds"])
+def test_fcm_zero_rejected(field):
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None, **{field: 0})
+
+
+@pytest.mark.parametrize("field", ["fcm_batch_size", "fcm_max_attempts", "fcm_worker_interval_seconds"])
+def test_fcm_negative_rejected(field):
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None, **{field: -1})
+
+
+def test_fcm_enabled_without_credentials_file_rejected():
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None, fcm_enabled=True, fcm_credentials_file="")
+
+
+def test_fcm_enabled_with_blank_credentials_file_rejected():
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None, fcm_enabled=True, fcm_credentials_file="   ")
+
+
+def test_fcm_enabled_with_credentials_file_accepted():
+    s = Settings(_env_file=None, fcm_enabled=True, fcm_credentials_file="/etc/puls/fcm-sa.json")
+    assert s.fcm_enabled is True
+
+
+def test_fcm_disabled_allows_empty_credentials_file():
+    s = Settings(_env_file=None, fcm_enabled=False, fcm_credentials_file="")
+    assert s.fcm_enabled is False

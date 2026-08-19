@@ -109,6 +109,20 @@ class NotificationRepository:
         )
         return self.db.execute(stmt).scalars().first()
 
+    def recipient_exists(self, notification_id: int, korisnik_id: int) -> bool:
+        stmt = select(func.count()).select_from(ObavestenjePrimalac).where(
+            ObavestenjePrimalac.obavestenje_id == notification_id,
+            ObavestenjePrimalac.korisnik_id == korisnik_id,
+        )
+        return int(self.db.execute(stmt).scalar_one()) > 0
+
+    def unread_recipient_ids(self, notification_id: int) -> set[int]:
+        stmt = select(ObavestenjePrimalac.korisnik_id).where(
+            ObavestenjePrimalac.obavestenje_id == notification_id,
+            ObavestenjePrimalac.procitano == "N",
+        )
+        return set(self.db.execute(stmt).scalars().all())
+
     def get_recipient_for_update(
         self, notification_id: int, korisnik_id: int
     ) -> ObavestenjePrimalac | None:

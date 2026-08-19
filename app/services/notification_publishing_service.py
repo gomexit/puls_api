@@ -30,6 +30,7 @@ from app.repositories.audit_repository import AuditRepository
 from app.repositories.configuration_repository import ConfigurationRepository
 from app.repositories.notification_repository import NotificationRepository
 from app.repositories.notification_targeting_repository import NotificationTargetingRepository
+from app.repositories.push_delivery_repository import PushDeliveryRepository
 from app.schemas.notification import NotificationDraftInput
 from app.services.audit_service import AuditAction, AuditService
 from app.services.configuration_service import ConfigurationService
@@ -59,6 +60,7 @@ class NotificationPublishingService:
         targeting_repository: NotificationTargetingRepository | None = None,
         audit_service: AuditService | None = None,
         configuration_service: ConfigurationService | None = None,
+        push_delivery_repository: PushDeliveryRepository | None = None,
         now_fn: Callable[[], datetime.datetime] = datetime.datetime.now,
     ):
         self.db = db
@@ -69,6 +71,7 @@ class NotificationPublishingService:
             AuditRepository(db), izvor=self.settings.audit_source
         )
         self.config = configuration_service or ConfigurationService(ConfigurationRepository(db))
+        self.push_delivery = push_delivery_repository or PushDeliveryRepository(db)
         self._now = now_fn
 
     # --------------------------------------------------- deljena poslovna validacija
@@ -268,6 +271,10 @@ class NotificationPublishingService:
                 )
             )
 
+        # Outbox: po jedan PENDING push red za svakog primaoca, u ISTOJ transakciji.
+        # FCM se NE poziva ovde (worker to radi kasnije). Idempotentno (bez duplih redova).
+        self.push_delivery.create_pending_for_recipients(notification_id, user_ids, now)
+
         obav.status = OBAVESTENJE_STATUS_PUBLISHED
         obav.datum_objave = now
         obav.datum_isteka = istek
@@ -281,6 +288,31 @@ class NotificationPublishingService:
             entitet_id=str(obav.id),
         )
         return obav
+
+    def apply_resend_unread(self, actor: Korisnik | None, notification_id: int) -> int:
+        """Resend push SAMO nepr. primaocima. Radi samo za PUBLISHED i jos aktivno/neisteklo
+        obavestenje. NE menja read/unread. Bez duplih redova (+BROJ_PONOVNIH_SLANJA).
+        Vraca broj primalaca vracenih u PENDING. BEZ commit/rollback."""
+        obav = self.repo.get_notification_for_update(notification_id)
+        if obav is None:
+            raise NotificationNotFoundError()
+        if obav.status != OBAVESTENJE_STATUS_PUBLISHED:
+            raise InvalidNotificationStatusTransitionError()
+        now = self._now()
+        if not obav.is_available_to_employees(now):
+            raise ValidationBusinessError("Obaveštenje nije aktivno objavljeno (isteklo/arhivirano).")
+
+        unread_ids = self.repo.unread_recipient_ids(notification_id)
+        affected = self.push_delivery.requeue_unread(notification_id, unread_ids, now)
+        self.audit_service.log(
+            AuditAction.NOTIFICATION_PUSH_RESEND,
+            korisnik_id=actor.id if actor else None,
+            platni_broj=actor.platni_broj if actor else None,
+            tip_entiteta="OBAVESTENJE",
+            entitet_id=str(notification_id),
+            detalji=f"resend_unread={affected}",
+        )
+        return affected
 
     # ============================================== javni wrapper-i (apply_* + commit)
     def create_draft(self, actor: Korisnik | None, payload: NotificationDraftInput) -> Obavestenje:

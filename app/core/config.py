@@ -1,6 +1,6 @@
 from functools import lru_cache
 
-from pydantic import model_validator
+from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 PRODUCTION_ENV = "production"
@@ -45,6 +45,14 @@ class Settings(BaseSettings):
     provisioning_interval_minutes: int = 10
     provisioning_batch_size: int = 100
 
+    # FCM push (dodatni kanal; Inbox ostaje izvor istine). Push worker je zaseban proces.
+    # U .env se cuva SAMO putanja do service-account JSON fajla, nikada sadrzaj/kljuc.
+    fcm_enabled: bool = False
+    fcm_credentials_file: str = ""
+    fcm_batch_size: int = Field(default=100, ge=1, le=1000)
+    fcm_max_attempts: int = Field(default=5, ge=1, le=20)
+    fcm_worker_interval_seconds: int = Field(default=30, ge=1, le=3600)
+
     @property
     def is_production(self) -> bool:
         return self.app_env.strip().lower() == PRODUCTION_ENV
@@ -67,6 +75,16 @@ class Settings(BaseSettings):
             raise ValueError(
                 f"U produkciji PORTAL_SERVICE_KEY mora imati najmanje {MIN_PRODUCTION_SERVICE_KEY_LENGTH} karaktera."
             )
+        return self
+
+    @model_validator(mode="after")
+    def _validate_fcm(self) -> "Settings":
+        # Vazi u svakom okruzenju (ne samo produkciji): ako je FCM ukljucen, putanja
+        # do service-account fajla mora biti postavljena. Postojanje/citljivost fajla
+        # proverava provider (get_fcm_provider) - Settings ne radi I/O. Poruka ne sme
+        # sadrzati sadrzaj/tajne, pa ne ispisuje putanju niti bilo koju vrednost.
+        if self.fcm_enabled and not self.fcm_credentials_file.strip():
+            raise ValueError("FCM_ENABLED=true zahteva postavljen FCM_CREDENTIALS_FILE.")
         return self
 
 

@@ -10,6 +10,7 @@ from app.core.exceptions import (
     InvalidResetCodeError,
     InvalidSessionError,
     ResetCodeExpiredError,
+    SessionExpiredError,
 )
 from app.core.security import generate_reset_code, hash_password, hash_reset_code
 from app.services.auth_service import AuthService
@@ -18,6 +19,7 @@ from tests.fakes import (
     FakeConfigurationService,
     FakeDb,
     FakeKorisnikRepository,
+    FakePushTokenRepository,
     FakeResetPasswordRepository,
     FakeSessionRepository,
     FakeSmsProvider,
@@ -34,6 +36,7 @@ def build_auth_service(korisnici=None, config_values=None, sms_should_succeed=Tr
     audit_service = FakeAuditService()
     sms_provider = FakeSmsProvider(should_succeed=sms_should_succeed)
 
+    push_token_repository = FakePushTokenRepository()
     service = AuthService(
         db=db,
         sms_provider=sms_provider,
@@ -42,6 +45,7 @@ def build_auth_service(korisnici=None, config_values=None, sms_should_succeed=Tr
         reset_repository=reset_repository,
         configuration_service=configuration_service,
         audit_service=audit_service,
+        push_token_repository=push_token_repository,
     )
     return service, db, korisnik_repository, session_repository, reset_repository, audit_service, sms_provider
 
@@ -176,6 +180,66 @@ class TestLogout:
 
         with pytest.raises(InvalidSessionError):
             service.authenticate_token(result.token)
+
+
+class TestAuthenticateTokenPushCleanup:
+    """Item 4: authenticate_token deaktivira FCM token uredjaja u ISTOJ transakciji
+    kao poništavanje sesije, kad god sesija prestane da vazi."""
+
+    def test_expired_session_deactivates_device_token(self):
+        korisnik = active_login_ready_user()
+        service, db, _, session_repo, _, _, _ = build_auth_service([korisnik])
+        result = service.login(korisnik.platni_broj, "Password123", "device-1", None, None, None)
+        service.push_token_repository.upsert(korisnik.id, "device-1", "tok-1", None)
+        result.sesija.datum_isteka = datetime.datetime.now() - datetime.timedelta(minutes=1)
+
+        with pytest.raises(SessionExpiredError):
+            service.authenticate_token(result.token)
+
+        assert result.sesija.aktivna == "N"
+        assert service.push_token_repository.tokens[(korisnik.id, "device-1")]["aktivan"] == "N"
+
+    def test_locked_account_deactivates_device_token(self):
+        korisnik = active_login_ready_user()
+        service, db, _, session_repo, _, _, _ = build_auth_service([korisnik])
+        result = service.login(korisnik.platni_broj, "Password123", "device-1", None, None, None)
+        service.push_token_repository.upsert(korisnik.id, "device-1", "tok-1", None)
+        korisnik.zakljucan = "D"
+
+        with pytest.raises(InvalidSessionError):
+            service.authenticate_token(result.token)
+
+        assert result.sesija.aktivna == "N"
+        assert service.push_token_repository.tokens[(korisnik.id, "device-1")]["aktivan"] == "N"
+
+    def test_disabled_account_deactivates_device_token(self):
+        korisnik = active_login_ready_user()
+        service, db, _, session_repo, _, _, _ = build_auth_service([korisnik])
+        result = service.login(korisnik.platni_broj, "Password123", "device-1", None, None, None)
+        service.push_token_repository.upsert(korisnik.id, "device-1", "tok-1", None)
+        korisnik.status_naloga = "ONEMOGUCEN"
+
+        with pytest.raises(InvalidSessionError):
+            service.authenticate_token(result.token)
+
+        assert service.push_token_repository.tokens[(korisnik.id, "device-1")]["aktivan"] == "N"
+
+    def test_rollback_undoes_session_and_token_together(self):
+        korisnik = active_login_ready_user()
+        service, db, _, session_repo, _, _, _ = build_auth_service([korisnik])
+        result = service.login(korisnik.platni_broj, "Password123", "device-1", None, None, None)
+        service.push_token_repository.upsert(korisnik.id, "device-1", "tok-1", None)
+        result.sesija.datum_isteka = datetime.datetime.now() - datetime.timedelta(minutes=1)
+
+        def _boom(*a, **k):
+            raise RuntimeError("token deaktivacija pukla")
+
+        service.push_token_repository.deactivate_user_device = _boom
+        rolled_back_before = db.rolled_back
+        with pytest.raises(RuntimeError):
+            service.authenticate_token(result.token)
+        # Rollback pozvan (ne commit) - transakcija (sesija+token) nije trajno upisana.
+        assert db.rolled_back == rolled_back_before + 1
 
 
 class TestForgotPassword:

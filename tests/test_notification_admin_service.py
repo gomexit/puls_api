@@ -22,6 +22,7 @@ from tests.notification_fakes import (
     FakeNotifDb,
     FakeNotificationRepo,
     FakeNotificationTargetingRepo,
+    FakePushDeliveryRepo,
     make_kategorija,
     make_obavestenje,
     make_primalac,
@@ -49,6 +50,7 @@ def _admin(repo=None, targeting=None, config=None):
         targeting_repository=targeting or FakeNotificationTargetingRepo(all_ids={1, 2, 3}),
         audit_service=audit,
         configuration_service=config or FakeConfigService(),
+        push_delivery_repository=FakePushDeliveryRepo(),
         now_fn=lambda: FIXED_NOW,
     )
     admin = NotificationAdminService(
@@ -332,6 +334,10 @@ def test_stats_zero_recipients():
         "broj_procitanih": 0,
         "broj_neprocitanih": 0,
         "procenat_procitanih": 0.0,
+        "push_pending": 0,
+        "push_sent": 0,
+        "push_failed": 0,
+        "push_skipped": 0,
     }
 
 

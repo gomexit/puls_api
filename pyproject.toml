@@ -16,6 +16,12 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+# Firebase Admin SDK je potreban SAMO za push worker sa FCM_ENABLED=true.
+# Aplikacija i testovi ga ne importuju (lazy import u FirebaseFcmProvider),
+# pa je izdvojen u zaseban extra da ne opterecuje default/dev instalaciju.
+push = [
+    "firebase-admin>=6.5.0",
+]
 dev = [
     "pytest>=8.3.0",
     "pytest-mock>=3.14.0",

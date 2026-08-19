@@ -47,6 +47,8 @@ class NotificationAdminService:
         self.publishing = publishing_service or NotificationPublishingService(
             db, repository=self.repo, audit_service=self.audit_service
         )
+        # Deli isti push-delivery repo kao publishing (jedan izvor, ista sesija).
+        self.push_delivery = self.publishing.push_delivery
 
     # ==================================================================== KATEGORIJE
     def list_categories(self, aktivna: bool | None) -> list[ObavestenjeKategorija]:
@@ -170,13 +172,28 @@ class NotificationAdminService:
             raise NotificationNotFoundError()
         ukupno, procitano = self.repo.recipient_counts(notification_id)
         procenat = round((procitano / ukupno * 100), 2) if ukupno else 0.0
+        # Aditivno: push statistika. push_sent = "FCM prihvatio", NE potvrda dostave uredjaju.
+        push = self.push_delivery.stats_for_notification(notification_id)
         return {
             "notification_id": notification_id,
             "broj_primalaca": ukupno,
             "broj_procitanih": procitano,
             "broj_neprocitanih": ukupno - procitano,
             "procenat_procitanih": procenat,
+            **push,
         }
+
+    def resend_unread(self, actor: Korisnik, notification_id: int) -> dict:
+        # Jedna transakcija: apply_resend (bez commit) -> pripremi rezultat -> commit.
+        try:
+            affected = self.publishing.apply_resend_unread(actor, notification_id)
+            self.db.flush()
+            result = {"notification_id": notification_id, "resent_count": affected}
+            self.db.commit()
+            return result
+        except Exception:
+            self.db.rollback()
+            raise
 
     # ----------------------------------------------------------------- helpers
     def _detail_view(self, obav: Obavestenje) -> dict:

@@ -32,6 +32,12 @@ def hash_session_token(token: str) -> str:
     return hashlib.sha256(token.encode("utf-8")).hexdigest()
 
 
+def hash_push_token(token: str) -> str:
+    """SHA-256 hex (64 znaka) FCM tokena. Cuva se umesto/uz pun token za jedinstvenost
+    i pretragu; pun token se nikada ne loguje."""
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+
 def generate_reset_code() -> str:
     return "".join(secrets.choice("0123456789") for _ in range(RESET_CODE_DIGITS))
 

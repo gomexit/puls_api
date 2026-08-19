@@ -16,6 +16,7 @@ from app.schemas.notification import (
     AdminNotificationDetailResponse,
     AdminNotificationListItem,
     AdminNotificationListResponse,
+    AdminNotificationResendResponse,
     AdminNotificationStatsResponse,
     AdminNotificationStatusRequest,
     NotificationDraftInput,
@@ -196,3 +197,15 @@ def notification_stats(
     service: NotificationAdminService = Depends(get_notification_admin_service),
 ) -> AdminNotificationStatsResponse:
     return AdminNotificationStatsResponse(**service.get_stats(notification_id))
+
+
+@router.post(
+    "/notifications/{notification_id}/resend-unread",
+    response_model=AdminNotificationResendResponse,
+)
+def resend_unread(
+    notification_id: int,
+    actor: Korisnik = Depends(require_portal_admin_or_hr),
+    service: NotificationAdminService = Depends(get_notification_admin_service),
+) -> AdminNotificationResendResponse:
+    return AdminNotificationResendResponse(**service.resend_unread(actor, notification_id))
