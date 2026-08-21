@@ -5,6 +5,7 @@ from app.api.v1 import (
     admin_notifications,
     admin_survey_results,
     admin_surveys,
+    admin_users,
     auth,
     ideas,
     notifications,
@@ -19,6 +20,7 @@ api_router.include_router(admin_ideas.router)
 api_router.include_router(surveys.router)
 api_router.include_router(admin_surveys.router)
 api_router.include_router(admin_survey_results.router)
+api_router.include_router(admin_users.router)
 api_router.include_router(notifications.router)
 api_router.include_router(admin_notifications.router)
 api_router.include_router(push.router)

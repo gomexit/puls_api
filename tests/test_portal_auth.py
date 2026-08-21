@@ -11,7 +11,7 @@ from app.core.config import Settings
 from app.core.exceptions import ForbiddenError, InvalidServiceCredentialsError
 from app.db.session import get_db
 from app.dependencies import portal_auth
-from app.dependencies.portal_auth import require_portal_admin_or_hr
+from app.dependencies.portal_auth import require_portal_admin, require_portal_admin_or_hr
 from app.core.config import get_settings
 from app.main import app
 from app.api.v1 import admin_ideas as admin_ideas_module
@@ -164,6 +164,27 @@ def test_no_bearer_needed_first_login_flags_ignored():
     u = _admin(obavezna_promena_lozinke="D", telefon_potvrdjen="N", lozinka_hash=None)
     repo = FakePortalRepo([u], {1: ["ADMIN"]})
     assert _call(VALID_KEY, "admin1", repo) is u
+
+
+# ---------------------------------------------------------- require_portal_admin
+def test_require_portal_admin_allows_admin_role():
+    u = _admin()
+    repo = FakePortalRepo([u], {1: ["ADMIN"]})
+    assert require_portal_admin(korisnik=u, db=repo) is u
+
+
+def test_require_portal_admin_rejects_hr_only():
+    u = _admin()
+    repo = FakePortalRepo([u], {1: ["HR"]})
+    with pytest.raises(ForbiddenError):
+        require_portal_admin(korisnik=u, db=repo)
+
+
+def test_require_portal_admin_rejects_zaposleni():
+    u = _admin()
+    repo = FakePortalRepo([u], {1: ["ZAPOSLENI"]})
+    with pytest.raises(ForbiddenError):
+        require_portal_admin(korisnik=u, db=repo)
 
 
 # ---------------------------------------------------------------- ključ se ne curi

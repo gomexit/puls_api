@@ -98,3 +98,16 @@ def require_portal_admin_or_hr(
         raise ForbiddenError()
 
     return korisnik
+
+
+def require_portal_admin(
+    korisnik: Korisnik = Depends(require_portal_admin_or_hr),
+    db: Session = Depends(get_db),
+) -> Korisnik:
+    """Uze pravilo od require_portal_admin_or_hr: servisni kljuc i acting identitet
+    su vec provereni (bez dupliranja te provere); ovde se samo dodatno zahteva
+    AKTIVNA ADMIN uloga. HR (bez ADMIN uloge) dobija 403."""
+    codes = set(KorisnikRepository(db).get_active_role_codes(korisnik.id))
+    if ROLE_ADMIN not in codes:
+        raise ForbiddenError()
+    return korisnik

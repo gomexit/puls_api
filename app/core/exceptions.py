@@ -235,6 +235,24 @@ class PushTokenConflictError(PulsApiError):
     message = "Registracija push tokena nije uspela zbog istovremene izmene. Pokušajte ponovo."
 
 
+class UserNotFoundError(PulsApiError):
+    code = "USER_NOT_FOUND"
+    status_code = status.HTTP_404_NOT_FOUND
+    message = "Korisnik nije pronađen."
+
+
+class AdminSelfActionNotAllowedError(PulsApiError):
+    code = "ADMIN_SELF_ACTION_NOT_ALLOWED"
+    status_code = status.HTTP_409_CONFLICT
+    message = "Administrator ne može izvršiti ovu akciju nad sopstvenim nalogom."
+
+
+class SmsDeliveryFailedError(PulsApiError):
+    code = "SMS_DELIVERY_FAILED"
+    status_code = status.HTTP_502_BAD_GATEWAY
+    message = "Slanje SMS poruke nije uspelo. Lozinka nije promenjena."
+
+
 def register_exception_handlers(app: FastAPI) -> None:
     @app.exception_handler(PulsApiError)
     async def handle_puls_api_error(request: Request, exc: PulsApiError) -> JSONResponse:
