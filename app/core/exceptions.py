@@ -259,6 +259,12 @@ class AuditLogNotFoundError(PulsApiError):
     message = "Audit zapis nije pronađen."
 
 
+class ConfigurationKeyNotAllowedError(PulsApiError):
+    code = "CONFIGURATION_KEY_NOT_ALLOWED"
+    status_code = status.HTTP_404_NOT_FOUND
+    message = "Ovaj konfiguracioni ključ nije dozvoljen."
+
+
 def register_exception_handlers(app: FastAPI) -> None:
     @app.exception_handler(PulsApiError)
     async def handle_puls_api_error(request: Request, exc: PulsApiError) -> JSONResponse:

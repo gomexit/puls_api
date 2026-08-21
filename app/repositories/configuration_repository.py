@@ -13,3 +13,13 @@ class ConfigurationRepository:
             Konfiguracija.kljuc == kljuc, Konfiguracija.aktivna == "D"
         )
         return self.db.execute(stmt).scalar_one_or_none()
+
+    def get_values(self, kljucevi: list[str]) -> dict[str, str | None]:
+        """Batch verzija get_value - jedan upit za više ključeva (izbegava N+1).
+        Aditivna metoda, ne menja ponašanje get_value ni postojećih pozivalaca."""
+        if not kljucevi:
+            return {}
+        stmt = select(Konfiguracija.kljuc, Konfiguracija.vrednost).where(
+            Konfiguracija.kljuc.in_(kljucevi), Konfiguracija.aktivna == "D"
+        )
+        return dict(self.db.execute(stmt).all())
