@@ -1,4 +1,4 @@
-from sqlalchemy import Select, select
+from sqlalchemy import Select, case, select
 from sqlalchemy.orm import Session
 
 from app.models.korisnik import Korisnik
@@ -48,9 +48,12 @@ class KorisnikRepository:
         return list(self.db.execute(stmt).scalars().all())
 
     def get_primary_active_raspored(self, korisnik_id: int) -> KorisnikRaspored | None:
+        # primarni.desc() bi pogresno stavilo 'N' ispred 'D' (alfabetski); eksplicitan
+        # CASE prioritet + ID kao stabilan tie-breaker.
+        primarni_prioritet = case((KorisnikRaspored.primarni == "D", 0), else_=1)
         stmt = (
             select(KorisnikRaspored)
             .where(KorisnikRaspored.korisnik_id == korisnik_id, KorisnikRaspored.aktivan == "D")
-            .order_by(KorisnikRaspored.primarni.desc())
+            .order_by(primarni_prioritet, KorisnikRaspored.id)
         )
         return self.db.execute(stmt).scalars().first()

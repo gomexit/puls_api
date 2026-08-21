@@ -188,6 +188,12 @@ class SurveyTypeNotFoundError(PulsApiError):
     message = "Tip ankete nije pronađen."
 
 
+class AnonymousSurveyResponsesNotAvailableError(PulsApiError):
+    code = "ANONYMOUS_SURVEY_RESPONSES_NOT_AVAILABLE"
+    status_code = status.HTTP_409_CONFLICT
+    message = "Pojedinačni odgovori nisu dostupni za anonimnu anketu."
+
+
 # --- Modul OBAVESTENJA ---
 class NotificationNotFoundError(PulsApiError):
     # Generička poruka: isti odgovor za nepostojeće, tuđe, neobjavljeno, buduće,
