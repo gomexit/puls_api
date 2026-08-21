@@ -11,7 +11,7 @@ from app.dependencies import portal_auth
 from app.main import app
 from app.services.admin_configuration_service import AdminConfigurationService
 from tests.admin_configuration_fakes import FakeAdminConfigurationRepository, FakeDb, FakeKonfiguracijaRow
-from tests.fakes import FakeAuditService, make_korisnik
+from tests.fakes import FakeAuditService, FakeSystemNotificationService, make_korisnik
 
 VALID_KEY = "s" * 40
 
@@ -61,7 +61,12 @@ def _make_service(rows=None):
     store: dict = {}
     repo = FakeAdminConfigurationRepository(rows, store=store)
     db = FakeDb(store=store)
-    return AdminConfigurationService(db, repository=repo, audit_service=FakeAuditService())
+    return AdminConfigurationService(
+        db,
+        repository=repo,
+        audit_service=FakeAuditService(),
+        system_notification_service=FakeSystemNotificationService(),
+    )
 
 
 # ================================================================= OBO auth

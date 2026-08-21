@@ -53,6 +53,12 @@ class Settings(BaseSettings):
     fcm_max_attempts: int = Field(default=5, ge=1, le=20)
     fcm_worker_interval_seconds: int = Field(default=30, ge=1, le=3600)
 
+    # Sistemska obavestenja (SURVEY_ACTIVATED/EXPIRING, IDEA_CYCLE_*, IDEA_TOP_10/
+    # NAGRADJENA, APP_VERSION_CHANGED). Zaseban worker, jedna instanca, van web procesa.
+    sys_notification_worker_interval_seconds: int = Field(default=300, ge=1, le=86400)
+    sys_notification_batch_size: int = Field(default=50, ge=1, le=1000)
+    sys_notification_max_attempts: int = Field(default=5, ge=1, le=20)
+
     @property
     def is_production(self) -> bool:
         return self.app_env.strip().lower() == PRODUCTION_ENV

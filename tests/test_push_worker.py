@@ -111,7 +111,9 @@ def test_success_marks_sent_and_safe_payload():
     assert red.status == "SENT" and red.datum_slanja == FIXED_NOW
     # payload: samo dozvoljena polja, sve stringovi, bez tokena
     sent = fcm.sent[0]["data"]
-    assert set(sent.keys()) == {"notification_id", "title", "body", "category"}
+    assert set(sent.keys()) == {
+        "notification_id", "title", "body", "category", "akcija_tip", "resurs_id", "akcija_url",
+    }
     assert all(isinstance(v, str) for v in sent.values())
     assert "tok-1" not in str(fcm.sent)
 

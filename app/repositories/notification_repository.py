@@ -4,6 +4,7 @@ from sqlalchemy import and_, case, delete, func, select
 from sqlalchemy.orm import Session
 
 from app.models.anketa import Anketa
+from app.models.idea_ciklus import IdeaCiklus
 from app.models.ideja import Ideja
 from app.models.obavestenje import (
     OBAVESTENJE_STATUS_PUBLISHED,
@@ -166,6 +167,11 @@ class NotificationRepository:
     def idea_exists(self, idea_id: int) -> bool:
         return self.db.execute(
             select(func.count()).select_from(Ideja).where(Ideja.id == idea_id)
+        ).scalar_one() > 0
+
+    def idea_cycle_exists(self, cycle_id: int) -> bool:
+        return self.db.execute(
+            select(func.count()).select_from(IdeaCiklus).where(IdeaCiklus.id == cycle_id)
         ).scalar_one() > 0
 
     # ------------------------------------------------------------ Admin (citanje)

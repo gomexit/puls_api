@@ -46,6 +46,7 @@ class FakeNotificationRepo:
         self.recipients: list[ObavestenjePrimalac] = []
         self.survey_ids: set[int] = set()
         self.idea_ids: set[int] = set()
+        self.idea_cycle_ids: set[int] = set()
 
     # --- setup helpers ---
     def add_category(self, kat: ObavestenjeKategorija) -> ObavestenjeKategorija:
@@ -148,6 +149,9 @@ class FakeNotificationRepo:
 
     def idea_exists(self, idea_id):
         return idea_id in self.idea_ids
+
+    def idea_cycle_exists(self, cycle_id):
+        return cycle_id in self.idea_cycle_ids
 
     # --- admin citanje ---
     def admin_list(self, status, category, datum_od, datum_do, page, page_size):
@@ -321,6 +325,9 @@ class FakeConfigService:
 
     def get_int(self, kljuc, default):
         return int(self.values.get(kljuc, default))
+
+    def get_str(self, kljuc, default):
+        return self.values.get(kljuc, default)
 
 
 # --------------------------------------------------------------------- fabrike

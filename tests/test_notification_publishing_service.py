@@ -238,6 +238,106 @@ def test_author_null_for_system_event():
     assert repo.get_notification(obav.id).kreirao_platni_broj is None
 
 
+# ============================================================ IDEA_CYCLE akcija
+def test_idea_cycle_action_requires_positive_resurs_id():
+    for bad in (0, -1):
+        with pytest.raises(ValueError):
+            _draft_input(akcija_tip="IDEA_CYCLE", resurs_id=bad)
+
+
+def test_idea_cycle_action_forbids_url():
+    with pytest.raises(ValueError):
+        NotificationDraftInput(
+            kategorija_sifra="OPSTE",
+            naslov="Naslov",
+            kratak_tekst="Kratak",
+            sadrzaj="Sadržaj",
+            akcija_tip="IDEA_CYCLE",
+            resurs_id=1,
+            akcija_url="https://example.com",
+            ciljevi=[{"tip_cilja": "SVI"}],
+        )
+
+
+def test_idea_cycle_resurs_must_exist_at_create():
+    service, repo = _service()
+    with pytest.raises(ValidationBusinessError):
+        service.create_draft(_actor(), _draft_input(akcija_tip="IDEA_CYCLE", resurs_id=999))
+
+
+def test_idea_cycle_resurs_exists_allows_create():
+    service, repo = _service()
+    repo.idea_cycle_ids.add(5)
+    obav = service.create_draft(_actor(), _draft_input(akcija_tip="IDEA_CYCLE", resurs_id=5))
+    assert repo.get_notification(obav.id).akcija_tip == "IDEA_CYCLE"
+    assert repo.get_notification(obav.id).resurs_id == 5
+
+
+# ==================================================== sistemsko objavljivanje
+def test_apply_publish_system_creates_published_notification_with_null_author():
+    service, repo = _service()
+    obav = service.apply_publish_system(
+        kategorija_sifra="SISTEM",
+        naslov="Naslov",
+        kratak_tekst="Kratak",
+        sadrzaj="Sadržaj",
+        akcija_tip="IDEA_CYCLE",
+        resurs_id=7,
+        akcija_url=None,
+        recipient_ids={1, 2, 3},
+        datum_isteka=FIXED_NOW + datetime.timedelta(days=10),
+    )
+    stored = repo.get_notification(obav.id)
+    assert stored.status == OBAVESTENJE_STATUS_PUBLISHED
+    assert stored.kreirao_platni_broj is None
+    assert repo.existing_recipient_ids(obav.id) == {1, 2, 3}
+
+
+def test_apply_publish_system_creates_no_target_rows():
+    """Sistemsko objavljivanje NE pravi PULS_OBAVESTENJE_CILJEVI po PLATNI_BROJ za
+    svakog korisnika - eksplicitni recipient_ids zaobilaze standardnu ciljnu putanju."""
+    service, repo = _service()
+    obav = service.apply_publish_system(
+        kategorija_sifra="SISTEM",
+        naslov="Naslov",
+        kratak_tekst="Kratak",
+        sadrzaj="Sadržaj",
+        akcija_tip="NONE",
+        resurs_id=None,
+        akcija_url=None,
+        recipient_ids={1, 2},
+        datum_isteka=FIXED_NOW + datetime.timedelta(days=10),
+    )
+    assert repo.get_targets(obav.id) == []
+
+
+def test_apply_publish_system_creates_pending_push_rows():
+    repo = FakeNotificationRepo()
+    repo.add_category(make_kategorija())
+    push = FakePushDeliveryRepo()
+    service = NotificationPublishingService(
+        db=FakeNotifDb(),
+        repository=repo,
+        targeting_repository=FakeNotificationTargetingRepo(all_ids={1, 2, 3}),
+        audit_service=FakeAuditService(),
+        configuration_service=FakeConfigService(),
+        push_delivery_repository=push,
+        now_fn=lambda: FIXED_NOW,
+    )
+    obav = service.apply_publish_system(
+        kategorija_sifra="SISTEM",
+        naslov="N",
+        kratak_tekst="K",
+        sadrzaj="S",
+        akcija_tip="NONE",
+        resurs_id=None,
+        akcija_url=None,
+        recipient_ids={1, 2},
+        datum_isteka=FIXED_NOW + datetime.timedelta(days=10),
+    )
+    assert push.existing_user_ids(obav.id) == {1, 2}
+
+
 def test_republish_conflict_no_duplicate_recipients():
     service, repo = _service(targeting=FakeNotificationTargetingRepo(all_ids={1, 2}))
     obav = _create_and_publish(service, repo)

@@ -13,6 +13,7 @@ from app.core.exceptions import (
 from app.models.korisnik import Korisnik
 from app.models.obavestenje import (
     AKCIJA_IDEA,
+    AKCIJA_IDEA_CYCLE,
     AKCIJA_SURVEY,
     CILJ_ORGJED,
     CILJ_PLATNI_BROJ,
@@ -98,6 +99,9 @@ class NotificationPublishingService:
         elif akcija_tip == AKCIJA_IDEA:
             if resurs_id is None or not self.repo.idea_exists(resurs_id):
                 raise ValidationBusinessError("Ideja (resurs_id) za IDEA akciju ne postoji.")
+        elif akcija_tip == AKCIJA_IDEA_CYCLE:
+            if resurs_id is None or not self.repo.idea_cycle_exists(resurs_id):
+                raise ValidationBusinessError("Ciklus ideja (resurs_id) za IDEA_CYCLE akciju ne postoji.")
 
     # ================================================================ apply_* (bez commit)
     def apply_create_draft(
@@ -357,6 +361,62 @@ class NotificationPublishingService:
         except Exception:
             self.db.rollback()
             raise
+
+    # ================================================== sistemsko objavljivanje
+    def apply_publish_system(
+        self,
+        kategorija_sifra: str,
+        naslov: str,
+        kratak_tekst: str,
+        sadrzaj: str,
+        akcija_tip: str,
+        resurs_id: int | None,
+        akcija_url: str | None,
+        recipient_ids: set[int],
+        datum_isteka: datetime.datetime,
+    ) -> Obavestenje:
+        """Specijalizovano INTERNO objavljivanje za sistemski notification worker:
+        eksplicitan skup primalaca (BEZ PULS_OBAVESTENJE_CILJEVI po PLATNI_BROJ za
+        svakog korisnika), autor UVEK NULL (sistemski dogadjaj - nema acting korisnika).
+        BEZ commit/rollback - poziva ga worker unutar SVOJE transakcije, zajedno sa
+        oznacavanjem dogadjaja kao PROCESSED. Standardna admin draft/publish putanja
+        (create_draft/apply_publish) ostaje potpuno nepromenjena."""
+        now = self._now()
+        obav = self.repo.add_notification(
+            Obavestenje(
+                kategorija_sifra=kategorija_sifra,
+                naslov=naslov,
+                kratak_tekst=kratak_tekst,
+                sadrzaj=sadrzaj,
+                status=OBAVESTENJE_STATUS_PUBLISHED,
+                akcija_tip=akcija_tip,
+                resurs_id=resurs_id,
+                akcija_url=akcija_url,
+                kreirao_platni_broj=None,
+                datum_objave=now,
+                datum_isteka=datum_isteka,
+                datum_kreiranja=now,
+            )
+        )
+        for uid in recipient_ids:
+            self.repo.add_recipient(
+                ObavestenjePrimalac(
+                    obavestenje_id=obav.id,
+                    korisnik_id=uid,
+                    procitano="N",
+                    datum_citanja=None,
+                    datum_kreiranja=now,
+                )
+            )
+        self.push_delivery.create_pending_for_recipients(obav.id, recipient_ids, now)
+        self.audit_service.log(
+            AuditAction.NOTIFICATION_PUBLISHED,
+            korisnik_id=None,
+            platni_broj=None,
+            tip_entiteta="OBAVESTENJE",
+            entitet_id=str(obav.id),
+        )
+        return obav
 
     def _resolve_recipients(self, targets) -> set[int]:
         user_ids: set[int] = set()

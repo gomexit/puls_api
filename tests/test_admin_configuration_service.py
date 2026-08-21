@@ -7,7 +7,7 @@ from app.core.exceptions import ConfigurationKeyNotAllowedError, ValidationBusin
 from app.services.admin_configuration_service import AdminConfigurationService
 from app.services.audit_service import AuditAction
 from tests.admin_configuration_fakes import FakeAdminConfigurationRepository, FakeDb, FakeKonfiguracijaRow
-from tests.fakes import FakeAuditService, make_korisnik
+from tests.fakes import FakeAuditService, FakeSystemNotificationService, make_korisnik
 
 
 def _service(rows=None, audit=None):
@@ -15,7 +15,13 @@ def _service(rows=None, audit=None):
     repo = FakeAdminConfigurationRepository(rows, store=store)
     db = FakeDb(store=store)
     audit_service = audit or FakeAuditService()
-    return AdminConfigurationService(db, repository=repo, audit_service=audit_service), db, repo, audit_service
+    service = AdminConfigurationService(
+        db,
+        repository=repo,
+        audit_service=audit_service,
+        system_notification_service=FakeSystemNotificationService(),
+    )
+    return service, db, repo, audit_service
 
 
 def _admin():
@@ -446,3 +452,28 @@ def test_no_db_queries_after_commit():
     # kao i posle - znaci da se posle commit-a nije pozvao jos jednom)
     assert repo.for_update_calls == ["MAX_IDEJA_PO_CIKLUSU"]
     assert calls_before[0][0] == 1
+
+
+# ================================================== sistemska obavestenja (enqueue hook)
+def test_current_version_change_enqueues_app_version_changed():
+    service, db, repo, audit = _service()
+    service.update_configuration(_admin(), "CURRENT_VERSION", "2.0")
+
+    calls = [c for c in service.system_notifications.calls if c[0] == "enqueue_app_version_changed"]
+    assert calls == [("enqueue_app_version_changed", ("2.0",))]
+
+
+def test_current_version_idempotent_put_does_not_enqueue_again():
+    service, db, repo, audit = _service()
+    service.update_configuration(_admin(), "CURRENT_VERSION", "2.0")
+    service.update_configuration(_admin(), "CURRENT_VERSION", "2.0")
+
+    calls = [c for c in service.system_notifications.calls if c[0] == "enqueue_app_version_changed"]
+    assert calls == [("enqueue_app_version_changed", ("2.0",))]
+
+
+def test_other_key_change_does_not_enqueue_app_version_changed():
+    service, db, repo, audit = _service()
+    service.update_configuration(_admin(), "MAX_IDEJA_PO_CIKLUSU", "5")
+
+    assert service.system_notifications.calls == []

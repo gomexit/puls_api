@@ -8,7 +8,7 @@ from app.core.exceptions import (
     ValidationBusinessError,
 )
 from app.services.survey_admin_service import SurveyAdminService
-from tests.fakes import FakeAuditService, make_korisnik
+from tests.fakes import FakeAuditService, FakeSystemNotificationService, make_korisnik
 from tests.survey_fakes import (
     FakeSurveyDb,
     FakeSurveyRepo,
@@ -29,7 +29,11 @@ def make_service(repo=None, targeting=None):
     targeting = targeting or FakeTargetingRepo(all_ids={1, 2, 3})
     db = FakeSurveyDb()
     service = SurveyAdminService(
-        db=db, repository=repo, targeting_repository=targeting, audit_service=FakeAuditService()
+        db=db,
+        repository=repo,
+        targeting_repository=targeting,
+        audit_service=FakeAuditService(),
+        system_notification_service=FakeSystemNotificationService(),
     )
     return service, repo, db
 
@@ -372,3 +376,30 @@ def test_create_survey_resolves_condition_keys_and_activates():
     service.change_status(_actor(), anketa.id, "ACTIVE")
     assert anketa.status == "ACTIVE"
     assert repo.count_participants(anketa.id) == 2
+
+# ================================================== sistemska obavestenja (enqueue hook)
+def test_activation_to_active_enqueues_survey_activated():
+    service, repo, db = make_service(targeting=FakeTargetingRepo(all_ids={1, 2, 3}))
+    a = _valid_draft(repo)
+
+    service.change_status(_actor(), a.id, "ACTIVE")
+
+    calls = [c for c in service.system_notifications.calls if c[0] == "enqueue_survey_activated"]
+    assert calls == [("enqueue_survey_activated", (a.id,))]
+
+
+def test_transition_to_scheduled_does_not_enqueue_activation():
+    service, repo, db = make_service()
+    now = datetime.datetime.now()
+    a = make_anketa(
+        repo, status="DRAFT",
+        datum_pocetka=now + datetime.timedelta(days=1),
+        datum_zavrsetka=now + datetime.timedelta(days=5),
+    )
+    sec = add_sekcija(repo, a.id, 1)
+    add_pitanje(repo, sec.id, "BOOLEAN", redosled=1)
+    add_cilj(repo, a.id, "SVI")
+
+    service.change_status(_actor(), a.id, "SCHEDULED")
+
+    assert service.system_notifications.calls == []

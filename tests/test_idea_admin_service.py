@@ -15,6 +15,7 @@ from tests.fakes import (
     FakeDb,
     FakeIdeaCycleRepository,
     FakeIdeaRepository,
+    FakeSystemNotificationService,
     make_ciklus,
     make_ideja,
     make_korisnik,
@@ -27,7 +28,11 @@ def make_admin_service(cycles=None, ideje=None):
     idea_repo = FakeIdeaRepository(ideje)
     audit = FakeAuditService()
     service = IdeaAdminService(
-        db=db, idea_repository=idea_repo, cycle_repository=cycle_repo, audit_service=audit
+        db=db,
+        idea_repository=idea_repo,
+        cycle_repository=cycle_repo,
+        audit_service=audit,
+        system_notification_service=FakeSystemNotificationService(),
     )
     return service, db, cycle_repo, idea_repo, audit
 
@@ -104,6 +109,7 @@ def test_concurrent_activation_maps_unique_index_to_business_error():
     service = IdeaAdminService(
         db=db, idea_repository=FakeIdeaRepository(), cycle_repository=cycle_repo,
         audit_service=FakeAuditService(),
+        system_notification_service=FakeSystemNotificationService(),
     )
 
     with pytest.raises(ActiveIdeaCycleAlreadyExistsError):
@@ -119,6 +125,7 @@ def test_unrelated_integrity_error_is_not_masked():
     service = IdeaAdminService(
         db=db, idea_repository=FakeIdeaRepository(), cycle_repository=cycle_repo,
         audit_service=FakeAuditService(),
+        system_notification_service=FakeSystemNotificationService(),
     )
 
     with pytest.raises(IntegrityError):
@@ -172,3 +179,42 @@ def test_konacna_ocena_computed_70_30_with_both_scores():
 
     # 10 * 0.70 + 6 * 0.30 = 7.00 + 1.80 = 8.80
     assert updated.konacna_ocena == Decimal("8.80")
+
+# ================================================== sistemska obavestenja (enqueue hook)
+def test_cycle_activation_enqueues_idea_cycle_activated():
+    planiran = make_ciklus(id=2, status="PLANIRAN")
+    service, db, _, _, _ = make_admin_service(cycles=[planiran])
+
+    service.change_cycle_status(_actor(), planiran.id, "AKTIVAN")
+
+    calls = [c for c in service.system_notifications.calls if c[0] == "enqueue_idea_cycle_activated"]
+    assert calls == [("enqueue_idea_cycle_activated", (planiran.id,))]
+
+
+def test_idea_status_to_top10_enqueues_idea_top10():
+    ideja = make_ideja(id=10, status="ODOBRENA")
+    service, db, _, _, _ = make_admin_service(ideje=[ideja])
+
+    service.change_idea_status(_actor(), ideja.id, "TOP_10")
+
+    calls = [c for c in service.system_notifications.calls if c[0] == "enqueue_idea_top_10"]
+    assert calls == [("enqueue_idea_top_10", (ideja.id,))]
+
+
+def test_idea_status_to_nagradjena_enqueues_idea_nagradjena():
+    ideja = make_ideja(id=11, status="TOP_10")
+    service, db, _, _, _ = make_admin_service(ideje=[ideja])
+
+    service.change_idea_status(_actor(), ideja.id, "NAGRAĐENA")
+
+    calls = [c for c in service.system_notifications.calls if c[0] == "enqueue_idea_nagradjena"]
+    assert calls == [("enqueue_idea_nagradjena", (ideja.id,))]
+
+
+def test_idea_status_to_odbijena_does_not_enqueue():
+    ideja = make_ideja(id=12, status="POSLATA")
+    service, db, _, _, _ = make_admin_service(ideje=[ideja])
+
+    service.change_idea_status(_actor(), ideja.id, "ODBIJENA")
+
+    assert service.system_notifications.calls == []

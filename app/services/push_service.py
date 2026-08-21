@@ -149,11 +149,16 @@ class PushDeliveryWorker:
             return self._skip(red, now, "EXPIRED")
         ttl_seconds = min(remaining_seconds, FCM_MAX_TTL_SECONDS)
 
+        # akcija_tip/resurs_id/akcija_url idu Androidu NEPROMENJENI (uklj. IDEA_CYCLE) -
+        # isti ugovor bez obzira na to da li je obavestenje admin ili sistemsko.
         data = {
             "notification_id": str(obav.id),
             "title": obav.naslov or "",
             "body": obav.kratak_tekst or "",
             "category": obav.kategorija_sifra or "",
+            "akcija_tip": obav.akcija_tip or "",
+            "resurs_id": str(obav.resurs_id) if obav.resurs_id is not None else "",
+            "akcija_url": obav.akcija_url or "",
         }
 
         result = self.fcm.send(token.fcm_token, data, ttl_seconds)

@@ -194,6 +194,40 @@ class FakeAuditService:
         self.entries.append({"sifra_akcije": sifra_akcije, **kwargs})
 
 
+class FakeSystemNotificationService:
+    """No-op stub za SystemNotificationService - koriste je testovi servisa koji NE
+    testiraju sistemska obavestenja, da izbegnu potrebu za pravim DB session-om samo
+    zbog enqueue_* poziva (koji su aditivna dopuna postojecih transakcija)."""
+
+    def __init__(self):
+        self.calls: list[tuple[str, tuple]] = []
+
+    def _record(self, name, *args):
+        self.calls.append((name, args))
+        return True
+
+    def enqueue_survey_activated(self, anketa_id):
+        return self._record("enqueue_survey_activated", anketa_id)
+
+    def enqueue_survey_expiring(self, anketa_id, datum_zavrsetka):
+        return self._record("enqueue_survey_expiring", anketa_id, datum_zavrsetka)
+
+    def enqueue_idea_cycle_activated(self, ciklus_id):
+        return self._record("enqueue_idea_cycle_activated", ciklus_id)
+
+    def enqueue_idea_cycle_expiring(self, ciklus_id, datum_zavrsetka):
+        return self._record("enqueue_idea_cycle_expiring", ciklus_id, datum_zavrsetka)
+
+    def enqueue_idea_top_10(self, idea_id):
+        return self._record("enqueue_idea_top_10", idea_id)
+
+    def enqueue_idea_nagradjena(self, idea_id):
+        return self._record("enqueue_idea_nagradjena", idea_id)
+
+    def enqueue_app_version_changed(self, version):
+        return self._record("enqueue_app_version_changed", version)
+
+
 class FakePushTokenRepository:
     """In-memory PULS_PUSH_TOKENI. Cuva se hash umesto oslanjanja na pun token u logu."""
 

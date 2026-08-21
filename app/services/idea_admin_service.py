@@ -17,12 +17,19 @@ from app.models.idea_ciklus import (
     IdeaCiklus,
     is_valid_cycle_transition,
 )
-from app.models.ideja import Ideja, compute_konacna_ocena, is_valid_idea_transition
+from app.models.ideja import (
+    IDEJA_STATUS_NAGRADJENA,
+    IDEJA_STATUS_TOP_10,
+    Ideja,
+    compute_konacna_ocena,
+    is_valid_idea_transition,
+)
 from app.models.korisnik import Korisnik
 from app.repositories.audit_repository import AuditRepository
 from app.repositories.idea_cycle_repository import IdeaCycleRepository
 from app.repositories.idea_repository import IdeaRepository
 from app.services.audit_service import AuditAction, AuditService
+from app.services.system_notification_service import SystemNotificationService
 
 
 # Unique (function-based) indeks koji garantuje najvise jedan AKTIVAN ciklus.
@@ -44,6 +51,7 @@ class IdeaAdminService:
         idea_repository: IdeaRepository | None = None,
         cycle_repository: IdeaCycleRepository | None = None,
         audit_service: AuditService | None = None,
+        system_notification_service: SystemNotificationService | None = None,
     ):
         self.db = db
         self.settings = get_settings()
@@ -52,6 +60,7 @@ class IdeaAdminService:
         self.audit_service = audit_service or AuditService(
             AuditRepository(db), izvor=self.settings.audit_source
         )
+        self.system_notifications = system_notification_service or SystemNotificationService(db)
 
     # --- Ciklusi ---
     def list_cycles(self) -> list[IdeaCiklus]:
@@ -104,6 +113,8 @@ class IdeaAdminService:
                 entitet_id=str(ciklus.id),
                 detalji=f"{stari_status}->{novi_status}",
             )
+            if novi_status == CIKLUS_STATUS_AKTIVAN:
+                self.system_notifications.enqueue_idea_cycle_activated(ciklus.id)
             self.db.commit()
             return ciklus
         except IntegrityError as exc:
@@ -157,6 +168,10 @@ class IdeaAdminService:
                 entitet_id=str(ideja.id),
                 detalji=f"{stari_status}->{novi_status}",
             )
+            if novi_status == IDEJA_STATUS_TOP_10:
+                self.system_notifications.enqueue_idea_top_10(ideja.id)
+            elif novi_status == IDEJA_STATUS_NAGRADJENA:
+                self.system_notifications.enqueue_idea_nagradjena(ideja.id)
             self.db.commit()
             return ideja
         except Exception:

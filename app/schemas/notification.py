@@ -212,8 +212,10 @@ class NotificationDraftInput(BaseModel):
             if self.resurs_id is not None or self.akcija_url is not None:
                 raise ValueError("NONE akcija ne sme imati resurs_id ni url.")
         elif self.akcija_tip in AKCIJE_SA_RESURSOM:
+            # AKCIJE_SA_RESURSOM = (SURVEY, IDEA, IDEA_CYCLE) - ista pravila za sve:
+            # resurs_id obavezan (RESURS_ID = PULS_IDEA_CIKLUSI.ID za IDEA_CYCLE), url zabranjen.
             if self.resurs_id is None or self.akcija_url is not None:
-                raise ValueError("SURVEY/IDEA akcija zahteva resurs_id i ne sme imati url.")
+                raise ValueError("SURVEY/IDEA/IDEA_CYCLE akcija zahteva resurs_id i ne sme imati url.")
             # RESURS_ID mora biti pozitivan (ogledalo DDL CHECK-a RESURS_ID > 0).
             # NAPOMENA: postojanje konkretne ankete/ideje se NE proverava ovde - to
             # je ugovor admin/automatske integracije, ne ovog ulaznog modela.

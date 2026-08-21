@@ -43,6 +43,7 @@ from app.repositories.survey_targeting_repository import SurveyTargetingReposito
 from app.services.audit_service import AuditAction, AuditService
 from app.services.survey_payload_validation import validate_admin_survey_payload
 from app.services.survey_validation import validate_structure
+from app.services.system_notification_service import SystemNotificationService
 
 
 class SurveyAdminService:
@@ -54,6 +55,7 @@ class SurveyAdminService:
         repository: SurveyRepository | None = None,
         targeting_repository: SurveyTargetingRepository | None = None,
         audit_service: AuditService | None = None,
+        system_notification_service: SystemNotificationService | None = None,
     ):
         self.db = db
         self.settings = get_settings()
@@ -62,6 +64,7 @@ class SurveyAdminService:
         self.audit_service = audit_service or AuditService(
             AuditRepository(db), izvor=self.settings.audit_source
         )
+        self.system_notifications = system_notification_service or SystemNotificationService(db)
 
     # ------------------------------------------------------------------ tipovi
     def list_types(self) -> list[AnketaTip]:
@@ -305,6 +308,10 @@ class SurveyAdminService:
                 entitet_id=str(anketa.id),
                 detalji=novi_status,
             )
+            if novi_status == ANKETA_STATUS_ACTIVE:
+                # Enqueue je deo ISTE transakcije (bez sopstvenog commit-a) - sistemski
+                # notification worker ce kasnije materijalizovati Inbox obavestenje.
+                self.system_notifications.enqueue_survey_activated(anketa.id)
             self.db.commit()
             return anketa
         except Exception:

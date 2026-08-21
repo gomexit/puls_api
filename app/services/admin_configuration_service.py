@@ -16,6 +16,7 @@ from app.models.korisnik import Korisnik
 from app.repositories.admin_configuration_repository import AdminConfigurationRepository
 from app.repositories.audit_repository import AuditRepository
 from app.services.audit_service import AuditAction, AuditService
+from app.services.system_notification_service import SystemNotificationService
 
 CURRENT_VERSION_KEY = "CURRENT_VERSION"
 MIN_SUPPORTED_VERSION_KEY = "MIN_SUPPORTED_VERSION"
@@ -28,12 +29,14 @@ class AdminConfigurationService:
         db: Session,
         repository: AdminConfigurationRepository | None = None,
         audit_service: AuditService | None = None,
+        system_notification_service: SystemNotificationService | None = None,
     ):
         self.db = db
         self.repo = repository or AdminConfigurationRepository(db)
         self.audit_service = audit_service or AuditService(
             AuditRepository(db), izvor=get_settings().audit_source
         )
+        self.system_notifications = system_notification_service or SystemNotificationService(db)
 
     # ---------------------------------------------------------------- citanje
     def list_configuration(self) -> dict:
@@ -114,6 +117,10 @@ class AdminConfigurationService:
                     tip_entiteta="KONFIGURACIJA",
                     entitet_id=normalized_key,
                 )
+                # Sistemsko obavestenje SAMO za stvarnu (ne-idempotentnu) izmenu
+                # CURRENT_VERSION - deo ISTE transakcije, bez sopstvenog commit-a.
+                if normalized_key == CURRENT_VERSION_KEY:
+                    self.system_notifications.enqueue_app_version_changed(normalized_value)
 
             # Response se sastavlja PRE commit-a - posle commit-a nema DB upita.
             result = {
