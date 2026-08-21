@@ -1,6 +1,8 @@
 from fastapi import APIRouter
 
 from app.api.v1 import (
+    admin_audit,
+    admin_dashboard,
     admin_ideas,
     admin_notifications,
     admin_survey_results,
@@ -24,3 +26,5 @@ api_router.include_router(admin_users.router)
 api_router.include_router(notifications.router)
 api_router.include_router(admin_notifications.router)
 api_router.include_router(push.router)
+api_router.include_router(admin_dashboard.router)
+api_router.include_router(admin_audit.router)

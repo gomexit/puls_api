@@ -253,6 +253,12 @@ class SmsDeliveryFailedError(PulsApiError):
     message = "Slanje SMS poruke nije uspelo. Lozinka nije promenjena."
 
 
+class AuditLogNotFoundError(PulsApiError):
+    code = "AUDIT_LOG_NOT_FOUND"
+    status_code = status.HTTP_404_NOT_FOUND
+    message = "Audit zapis nije pronađen."
+
+
 def register_exception_handlers(app: FastAPI) -> None:
     @app.exception_handler(PulsApiError)
     async def handle_puls_api_error(request: Request, exc: PulsApiError) -> JSONResponse:
