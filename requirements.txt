@@ -1,0 +1,24 @@
+# Generisano iz pyproject.toml + trenutno instaliranih verzija u .venv.
+# Instalacija: pip install -r requirements.txt
+
+# --- Core (project.dependencies) ---
+fastapi==0.141.1
+uvicorn[standard]==0.52.2
+pydantic==2.13.4
+pydantic-settings==2.15.0
+SQLAlchemy==2.0.52
+oracledb==4.0.2
+argon2-cffi==25.1.0
+python-multipart==0.0.32
+APScheduler==3.11.3
+
+# --- Push extra (project.optional-dependencies.push) ---
+# Potrebno samo za push worker sa FCM_ENABLED=true (lazy import, aplikacija/testovi ga ne zahtevaju).
+firebase_admin==7.5.0
+
+# --- Dev extra (project.optional-dependencies.dev) ---
+pytest==9.1.1
+pytest-mock==3.15.1
+httpx==0.28.1
+mypy==2.3.0
+ruff==0.16.2
