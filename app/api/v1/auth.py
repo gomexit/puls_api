@@ -69,7 +69,7 @@ def get_me(
 ) -> CurrentUserResponse:
     korisnik_repository = KorisnikRepository(auth_service.db)
     uloge = korisnik_repository.get_active_role_codes(korisnik.id)
-    raspored = korisnik_repository.get_primary_active_raspored(korisnik.id)
+    raspored = korisnik_repository.get_primary_active_raspored_with_names(korisnik.id)
 
     return CurrentUserResponse(
         id=korisnik.id,
@@ -84,7 +84,10 @@ def get_me(
         uloge=uloge,
         raspored=(
             CurrentUserRaspored(
-                orgjed_sifra=raspored.orgjed_sifra, radno_mesto_sifra=raspored.radno_mesto_sifra
+                orgjed_sifra=raspored.orgjed_sifra,
+                orgjed_naziv=raspored.orgjed_naziv,
+                radno_mesto_sifra=raspored.radno_mesto_sifra,
+                radno_mesto_naziv=raspored.radno_mesto_naziv,
             )
             if raspored
             else None

@@ -11,7 +11,9 @@ class UserSummary(BaseModel):
 
 class CurrentUserRaspored(BaseModel):
     orgjed_sifra: str
+    orgjed_naziv: str | None = None
     radno_mesto_sifra: str | None = None
+    radno_mesto_naziv: str | None = None
 
 
 class CurrentUserResponse(BaseModel):
