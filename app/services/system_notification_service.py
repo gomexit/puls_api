@@ -16,6 +16,7 @@ from sqlalchemy.orm import Session
 from app.core.config import get_settings
 from app.core.configuration_definitions import validate_https_url
 from app.core.exceptions import ValidationBusinessError
+from app.models.anketa import ANKETA_STATUS_ACTIVE, ANKETA_STATUS_CLOSED
 from app.models.idea_ciklus import IdeaCiklus
 from app.models.ideja import IDEJA_STATUS_NAGRADJENA, IDEJA_STATUS_TOP_10
 from app.models.obavestenje import AKCIJA_IDEA, AKCIJA_IDEA_CYCLE, AKCIJA_NONE, AKCIJA_SURVEY, AKCIJA_URL
@@ -137,16 +138,23 @@ class SystemNotificationService:
     # ============================================================= worker: otkrivanje
     def discover_events(self) -> dict:
         """Otkriva dogadjaje koje NIJE trigerovao direktan poslovni poziv: SCHEDULED
-        ankete koje su vremenom postale efektivno dostupne, i podsetnike (rok u
-        narednih 24h). Sopstvena transakcija (commit na kraju), zasebna od
-        process_batch - poziva je iskljucivo worker."""
+        ankete koje su vremenom postale efektivno dostupne (STATUS -> ACTIVE), ACTIVE
+        ankete kojima je istekao rok (STATUS -> CLOSED), i podsetnike (rok u narednih
+        24h). Sopstvena transakcija (commit na kraju), zasebna od process_batch -
+        poziva je iskljucivo worker."""
         now = self._now()
         window_end = now + datetime.timedelta(hours=EXPIRY_WINDOW_HOURS)
         discovered = 0
         try:
             for anketa in self.event_repo.find_scheduled_surveys_now_active(now):
+                # STATUS mora odraziti stvarnost pre nego sto se dogadjaj enqueue-uje.
+                anketa.status = ANKETA_STATUS_ACTIVE
+                anketa.datum_izmene = now
                 if self.enqueue_survey_activated(anketa.id):
                     discovered += 1
+            for anketa in self.event_repo.find_active_surveys_now_expired(now):
+                anketa.status = ANKETA_STATUS_CLOSED
+                anketa.datum_izmene = now
             for anketa in self.event_repo.find_surveys_expiring_within(now, window_end):
                 if self.enqueue_survey_expiring(anketa.id, anketa.datum_zavrsetka):
                     discovered += 1

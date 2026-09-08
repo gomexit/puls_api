@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.models.anketa import (
     ANKETA_STATUS_ACTIVE,
+    ANKETA_STATUS_CLOSED,
     ANKETA_STATUS_SCHEDULED,
     UCESCE_SUBMITTED,
     Anketa,
@@ -98,6 +99,15 @@ class SystemEventRepository:
             Anketa.datum_pocetka <= now,
             Anketa.datum_zavrsetka > now,
             Anketa.datum_zavrsetka <= window_end,
+        )
+        return list(self.db.execute(stmt).scalars().all())
+
+    def find_active_surveys_now_expired(self, now: datetime.datetime) -> list[Anketa]:
+        """ACTIVE ankete cija je DATUM_ZAVRSETKA vec prosla (vremenom istekle,
+        bez direktnog admin poziva na CLOSED)."""
+        stmt = select(Anketa).where(
+            Anketa.status == ANKETA_STATUS_ACTIVE,
+            Anketa.datum_zavrsetka <= now,
         )
         return list(self.db.execute(stmt).scalars().all())
 

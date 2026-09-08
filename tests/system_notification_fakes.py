@@ -132,6 +132,12 @@ class FakeSystemEventRepo:
             if a.status == "SCHEDULED" and a.datum_pocetka <= now < a.datum_zavrsetka
         ]
 
+    def find_active_surveys_now_expired(self, now):
+        return [
+            a for a in self.surveys.values()
+            if a.status == "ACTIVE" and a.datum_zavrsetka <= now
+        ]
+
     def find_surveys_expiring_within(self, now, window_end):
         return [
             a for a in self.surveys.values()

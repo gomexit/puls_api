@@ -188,6 +188,31 @@ def test_scheduled_survey_gets_activation_event_on_discovery():
     event = next(iter(event_repo.events.values()))
     assert event.tip_dogadjaja == "SURVEY_ACTIVATED"
     assert event.resurs_id == anketa.id
+    assert anketa.status == "ACTIVE"
+
+
+def test_active_survey_past_deadline_closed_on_discovery():
+    service, event_repo, *_ = _service(now=FIXED_NOW)
+    anketa = make_anketa(
+        status="ACTIVE",
+        datum_pocetka=FIXED_NOW - datetime.timedelta(days=5),
+        datum_zavrsetka=FIXED_NOW - datetime.timedelta(minutes=1),
+    )
+    event_repo.seed_survey(anketa)
+    service.discover_events()
+    assert anketa.status == "CLOSED"
+
+
+def test_active_survey_still_within_period_not_closed():
+    service, event_repo, *_ = _service(now=FIXED_NOW)
+    anketa = make_anketa(
+        status="ACTIVE",
+        datum_pocetka=FIXED_NOW - datetime.timedelta(days=1),
+        datum_zavrsetka=FIXED_NOW + datetime.timedelta(days=1),
+    )
+    event_repo.seed_survey(anketa)
+    service.discover_events()
+    assert anketa.status == "ACTIVE"
 
 
 def test_not_yet_started_scheduled_survey_not_discovered():
