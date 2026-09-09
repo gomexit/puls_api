@@ -2,6 +2,9 @@
 
 import datetime
 
+from types import SimpleNamespace
+
+from app.models.sistemski_dogadjaj import DOGADJAJ_TIP_ONBOARDING_SURVEY_AVAILABLE
 from app.services.notification_publishing_service import NotificationPublishingService
 from app.services.system_notification_service import SystemNotificationService
 from tests.fakes import FakeAuditService
@@ -14,16 +17,21 @@ from tests.notification_fakes import (
     make_kategorija,
 )
 from tests.system_notification_fakes import (
+    FakeAutomationRepo,
+    FakeOnboardingAssignmentService,
     FakeSystemEventRepo,
     make_anketa,
     make_ciklus,
     make_ideja,
+    make_korisnik,
 )
 
 FIXED_NOW = datetime.datetime(2026, 8, 18, 10, 0, 0)
 
 
-def _service(all_active_ids=None, max_attempts=5, config_values=None, now=FIXED_NOW):
+def _service(
+    all_active_ids=None, max_attempts=5, config_values=None, now=FIXED_NOW, automation_repo=None
+):
     event_repo = FakeSystemEventRepo()
     notif_repo = FakeNotificationRepo()
     notif_repo.add_category(make_kategorija(sifra="SISTEM", naziv="Sistemsko"))
@@ -46,6 +54,8 @@ def _service(all_active_ids=None, max_attempts=5, config_values=None, now=FIXED_
         targeting_repository=targeting,
         publishing_service=publishing,
         configuration_service=config,
+        onboarding_assignment_service=FakeOnboardingAssignmentService(),
+        automation_repository=automation_repo or FakeAutomationRepo(),
         max_attempts=max_attempts,
         now_fn=lambda: now,
     )
@@ -224,6 +234,64 @@ def test_not_yet_started_scheduled_survey_not_discovered():
     )
     event_repo.seed_survey(anketa)
     result = service.discover_events()
+    assert result["discovered"] == 0
+
+
+# ============================================== automatska (onboarding) anketa - discovery
+def test_automatska_anketa_scheduled_to_active_status_changes_but_no_global_event():
+    """Status prelaz SCHEDULED->ACTIVE se i dalje desava za automatsku anketu, ali
+    SURVEY_ACTIVATED se NE enqueue-uje globalno (korisnici se obavestavaju iskljucivo
+    kroz ONBOARDING_SURVEY_AVAILABLE po korisniku)."""
+    automation_repo = FakeAutomationRepo()
+    service, event_repo, *_ = _service(now=FIXED_NOW, automation_repo=automation_repo)
+    anketa = make_anketa(
+        status="SCHEDULED",
+        datum_pocetka=FIXED_NOW - datetime.timedelta(hours=1),
+        datum_zavrsetka=FIXED_NOW + datetime.timedelta(days=5),
+    )
+    event_repo.seed_survey(anketa)
+    automation_repo.mark_automatska(anketa.id)
+
+    result = service.discover_events()
+
+    assert anketa.status == "ACTIVE"
+    assert result["discovered"] == 0
+    assert len(event_repo.events) == 0
+
+
+def test_automatska_anketa_expiring_within_24h_gets_no_global_reminder():
+    """Automatska anketa nema jedinstven globalni rok - svaki korisnik ima svoj
+    individualni DATUM_ISTEKA na ucescu - zato SURVEY_EXPIRING se ne salje globalno."""
+    automation_repo = FakeAutomationRepo()
+    service, event_repo, *_ = _service(now=FIXED_NOW, automation_repo=automation_repo)
+    anketa = make_anketa(
+        status="ACTIVE",
+        datum_pocetka=FIXED_NOW - datetime.timedelta(days=1),
+        datum_zavrsetka=FIXED_NOW + datetime.timedelta(hours=23),
+    )
+    event_repo.seed_survey(anketa)
+    automation_repo.mark_automatska(anketa.id)
+
+    result = service.discover_events()
+
+    assert result["discovered"] == 0
+    assert len(event_repo.events) == 0
+
+
+def test_discover_events_reports_onboarding_assigned_separately():
+    """discovered i onboarding_assigned su odvojena polja - onboarding_assigned NE sme
+    uticati na znacenje discovered (SCHEDULED/EXPIRING dogadjaji)."""
+
+    class _StubAssignment:
+        def assign_due_surveys(self, now):
+            return {"assigned": 4}
+
+    service, event_repo, *_ = _service(now=FIXED_NOW)
+    service.onboarding_assignment = _StubAssignment()
+
+    result = service.discover_events()
+
+    assert result["onboarding_assigned"] == 4
     assert result["discovered"] == 0
 
 
@@ -580,3 +648,222 @@ def test_datum_isteka_le_now_never_causes_retry_or_failed():
     event = next(iter(event_repo.events.values()))
     assert event.status == "SKIPPED"
     assert event.broj_pokusaja == 0
+
+
+# ============================================================= ONBOARDING_SURVEY_AVAILABLE
+def _make_ucesce(**ov):
+    defaults = dict(
+        id=1,
+        anketa_id=100,
+        korisnik_id=7,
+        status="NOT_STARTED",
+        automatika_id=1,
+        datum_dostupnosti=FIXED_NOW - datetime.timedelta(days=1),
+        datum_isteka=FIXED_NOW + datetime.timedelta(days=6),
+    )
+    defaults.update(ov)
+    return SimpleNamespace(**defaults)
+
+
+def _seed_onboarding_happy_path(event_repo, ucesce):
+    """Seeduje anketu (ACTIVE/ne-anonimna) i korisnika (AKTIVAN/OMOGUCEN) tako da
+    SVE fail-closed provere u _resolve_onboarding_survey_available prodju."""
+    event_repo.seed_survey(make_anketa(id=ucesce.anketa_id, status="ACTIVE", anonimna="N"))
+    event_repo.seed_korisnik(
+        make_korisnik(id=ucesce.korisnik_id, status_zaposlenja="AKTIVAN", status_naloga="OMOGUCEN")
+    )
+
+
+def test_onboarding_survey_available_sent_only_to_that_user():
+    service, event_repo, notif_repo, *_ = _service()
+    ucesce = _make_ucesce()
+    event_repo.seed_ucesce(ucesce)
+    _seed_onboarding_happy_path(event_repo, ucesce)
+    event_repo.enqueue_if_absent(
+        f"ONBOARDING_SURVEY_AVAILABLE:{ucesce.anketa_id}:{ucesce.korisnik_id}:x",
+        DOGADJAJ_TIP_ONBOARDING_SURVEY_AVAILABLE,
+        ucesce.id,
+        None,
+        FIXED_NOW,
+    )
+
+    summary = service.process_batch(10)
+    assert summary["published"] == 1
+    obav = next(iter(notif_repo.notifications.values()))
+    assert notif_repo.existing_recipient_ids(obav.id) == {ucesce.korisnik_id}
+    # ANKETA_ID ulazi u sadrzaj (resurs_id polja obavestenja), ne u sistemski dogadjaj.
+    assert obav.resurs_id == ucesce.anketa_id
+    assert obav.akcija_tip == "SURVEY"
+
+
+def test_onboarding_survey_available_expired_skipped_not_failed():
+    service, event_repo, notif_repo, *_ = _service()
+    ucesce = _make_ucesce(datum_isteka=FIXED_NOW - datetime.timedelta(minutes=1))
+    event_repo.seed_ucesce(ucesce)
+    _seed_onboarding_happy_path(event_repo, ucesce)
+    event_repo.enqueue_if_absent(
+        "ONBOARDING_SURVEY_AVAILABLE:1", DOGADJAJ_TIP_ONBOARDING_SURVEY_AVAILABLE, ucesce.id, None, FIXED_NOW
+    )
+
+    summary = service.process_batch(10)
+    assert summary["skipped"] == 1
+    assert summary["failed"] == 0
+    assert len(notif_repo.notifications) == 0
+    event = next(iter(event_repo.events.values()))
+    assert event.status == "SKIPPED"
+
+
+def test_onboarding_survey_available_already_submitted_skipped():
+    service, event_repo, notif_repo, *_ = _service()
+    ucesce = _make_ucesce(status="SUBMITTED")
+    event_repo.seed_ucesce(ucesce)
+    _seed_onboarding_happy_path(event_repo, ucesce)
+    event_repo.enqueue_if_absent(
+        "ONBOARDING_SURVEY_AVAILABLE:1", DOGADJAJ_TIP_ONBOARDING_SURVEY_AVAILABLE, ucesce.id, None, FIXED_NOW
+    )
+
+    summary = service.process_batch(10)
+    assert summary["skipped"] == 1
+    assert len(notif_repo.notifications) == 0
+
+
+def test_onboarding_survey_available_missing_ucesce_skipped():
+    service, event_repo, notif_repo, *_ = _service()
+    event_repo.enqueue_if_absent(
+        "ONBOARDING_SURVEY_AVAILABLE:1", DOGADJAJ_TIP_ONBOARDING_SURVEY_AVAILABLE, 999, None, FIXED_NOW
+    )
+
+    summary = service.process_batch(10)
+    assert summary["skipped"] == 1
+    assert len(notif_repo.notifications) == 0
+
+
+# ------------------------------------------------------- fail-closed provere (8 uslova)
+def test_onboarding_survey_available_automatika_id_null_skipped():
+    """Obicno (rucno dodeljeno) ucesce - AUTOMATIKA_ID NULL - nikad ne salje
+    ONBOARDING_SURVEY_AVAILABLE (ovaj tip dogadjaja je iskljucivo za automatsku dodelu)."""
+    service, event_repo, notif_repo, *_ = _service()
+    ucesce = _make_ucesce(automatika_id=None)
+    event_repo.seed_ucesce(ucesce)
+    _seed_onboarding_happy_path(event_repo, ucesce)
+    event_repo.enqueue_if_absent(
+        "ONBOARDING_SURVEY_AVAILABLE:1", DOGADJAJ_TIP_ONBOARDING_SURVEY_AVAILABLE, ucesce.id, None, FIXED_NOW
+    )
+
+    summary = service.process_batch(10)
+    assert summary["skipped"] == 1
+    assert len(notif_repo.notifications) == 0
+
+
+def test_onboarding_survey_available_before_dostupnost_skipped():
+    service, event_repo, notif_repo, *_ = _service()
+    ucesce = _make_ucesce(datum_dostupnosti=FIXED_NOW + datetime.timedelta(minutes=1))
+    event_repo.seed_ucesce(ucesce)
+    _seed_onboarding_happy_path(event_repo, ucesce)
+    event_repo.enqueue_if_absent(
+        "ONBOARDING_SURVEY_AVAILABLE:1", DOGADJAJ_TIP_ONBOARDING_SURVEY_AVAILABLE, ucesce.id, None, FIXED_NOW
+    )
+
+    summary = service.process_batch(10)
+    assert summary["skipped"] == 1
+    assert len(notif_repo.notifications) == 0
+
+
+def test_onboarding_survey_available_missing_survey_skipped():
+    service, event_repo, notif_repo, *_ = _service()
+    ucesce = _make_ucesce()
+    event_repo.seed_ucesce(ucesce)
+    event_repo.seed_korisnik(
+        make_korisnik(id=ucesce.korisnik_id, status_zaposlenja="AKTIVAN", status_naloga="OMOGUCEN")
+    )
+    # NAMERNO bez seed_survey - anketa ne postoji.
+    event_repo.enqueue_if_absent(
+        "ONBOARDING_SURVEY_AVAILABLE:1", DOGADJAJ_TIP_ONBOARDING_SURVEY_AVAILABLE, ucesce.id, None, FIXED_NOW
+    )
+
+    summary = service.process_batch(10)
+    assert summary["skipped"] == 1
+    assert len(notif_repo.notifications) == 0
+
+
+def test_onboarding_survey_available_survey_not_active_skipped():
+    service, event_repo, notif_repo, *_ = _service()
+    ucesce = _make_ucesce()
+    event_repo.seed_ucesce(ucesce)
+    event_repo.seed_survey(make_anketa(id=ucesce.anketa_id, status="CLOSED", anonimna="N"))
+    event_repo.seed_korisnik(
+        make_korisnik(id=ucesce.korisnik_id, status_zaposlenja="AKTIVAN", status_naloga="OMOGUCEN")
+    )
+    event_repo.enqueue_if_absent(
+        "ONBOARDING_SURVEY_AVAILABLE:1", DOGADJAJ_TIP_ONBOARDING_SURVEY_AVAILABLE, ucesce.id, None, FIXED_NOW
+    )
+
+    summary = service.process_batch(10)
+    assert summary["skipped"] == 1
+    assert len(notif_repo.notifications) == 0
+
+
+def test_onboarding_survey_available_survey_anonymous_skipped():
+    service, event_repo, notif_repo, *_ = _service()
+    ucesce = _make_ucesce()
+    event_repo.seed_ucesce(ucesce)
+    event_repo.seed_survey(make_anketa(id=ucesce.anketa_id, status="ACTIVE", anonimna="D"))
+    event_repo.seed_korisnik(
+        make_korisnik(id=ucesce.korisnik_id, status_zaposlenja="AKTIVAN", status_naloga="OMOGUCEN")
+    )
+    event_repo.enqueue_if_absent(
+        "ONBOARDING_SURVEY_AVAILABLE:1", DOGADJAJ_TIP_ONBOARDING_SURVEY_AVAILABLE, ucesce.id, None, FIXED_NOW
+    )
+
+    summary = service.process_batch(10)
+    assert summary["skipped"] == 1
+    assert len(notif_repo.notifications) == 0
+
+
+def test_onboarding_survey_available_missing_korisnik_skipped():
+    service, event_repo, notif_repo, *_ = _service()
+    ucesce = _make_ucesce()
+    event_repo.seed_ucesce(ucesce)
+    event_repo.seed_survey(make_anketa(id=ucesce.anketa_id, status="ACTIVE", anonimna="N"))
+    # NAMERNO bez seed_korisnik - korisnik ne postoji.
+    event_repo.enqueue_if_absent(
+        "ONBOARDING_SURVEY_AVAILABLE:1", DOGADJAJ_TIP_ONBOARDING_SURVEY_AVAILABLE, ucesce.id, None, FIXED_NOW
+    )
+
+    summary = service.process_batch(10)
+    assert summary["skipped"] == 1
+    assert len(notif_repo.notifications) == 0
+
+
+def test_onboarding_survey_available_korisnik_zaposlenje_neaktivan_skipped():
+    service, event_repo, notif_repo, *_ = _service()
+    ucesce = _make_ucesce()
+    event_repo.seed_ucesce(ucesce)
+    event_repo.seed_survey(make_anketa(id=ucesce.anketa_id, status="ACTIVE", anonimna="N"))
+    event_repo.seed_korisnik(
+        make_korisnik(id=ucesce.korisnik_id, status_zaposlenja="NEAKTIVAN", status_naloga="OMOGUCEN")
+    )
+    event_repo.enqueue_if_absent(
+        "ONBOARDING_SURVEY_AVAILABLE:1", DOGADJAJ_TIP_ONBOARDING_SURVEY_AVAILABLE, ucesce.id, None, FIXED_NOW
+    )
+
+    summary = service.process_batch(10)
+    assert summary["skipped"] == 1
+    assert len(notif_repo.notifications) == 0
+
+
+def test_onboarding_survey_available_korisnik_nalog_onemogucen_skipped():
+    service, event_repo, notif_repo, *_ = _service()
+    ucesce = _make_ucesce()
+    event_repo.seed_ucesce(ucesce)
+    event_repo.seed_survey(make_anketa(id=ucesce.anketa_id, status="ACTIVE", anonimna="N"))
+    event_repo.seed_korisnik(
+        make_korisnik(id=ucesce.korisnik_id, status_zaposlenja="AKTIVAN", status_naloga="ONEMOGUCEN")
+    )
+    event_repo.enqueue_if_absent(
+        "ONBOARDING_SURVEY_AVAILABLE:1", DOGADJAJ_TIP_ONBOARDING_SURVEY_AVAILABLE, ucesce.id, None, FIXED_NOW
+    )
+
+    summary = service.process_batch(10)
+    assert summary["skipped"] == 1
+    assert len(notif_repo.notifications) == 0

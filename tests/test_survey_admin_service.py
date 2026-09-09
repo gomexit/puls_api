@@ -10,6 +10,7 @@ from app.core.exceptions import (
 from app.services.survey_admin_service import SurveyAdminService
 from tests.fakes import FakeAuditService, FakeSystemNotificationService, make_korisnik
 from tests.survey_fakes import (
+    FakeAutomationRepo,
     FakeSurveyDb,
     FakeSurveyRepo,
     FakeTargetingRepo,
@@ -22,18 +23,20 @@ from tests.survey_fakes import (
 )
 
 
-def make_service(repo=None, targeting=None):
+def make_service(repo=None, targeting=None, automation_repo=None):
     repo = repo or FakeSurveyRepo()
     if "PULS" not in repo.types:
         repo.add_type(make_tip())
     targeting = targeting or FakeTargetingRepo(all_ids={1, 2, 3})
     db = FakeSurveyDb()
+    notifications = FakeSystemNotificationService()
     service = SurveyAdminService(
         db=db,
         repository=repo,
         targeting_repository=targeting,
         audit_service=FakeAuditService(),
-        system_notification_service=FakeSystemNotificationService(),
+        system_notification_service=notifications,
+        automation_repository=automation_repo or FakeAutomationRepo(),
     )
     return service, repo, db
 
@@ -58,6 +61,42 @@ def test_activation_materializes_all_active():
 
     assert a.status == "ACTIVE"
     assert repo.count_participants(a.id) == 3
+
+
+def test_automatska_anketa_activation_skips_targets_and_global_notification():
+    """Anketa sa PULS_ANKETA_AUTOMATIKA redom ne sme dobiti materijalizovane
+    ciljeve (AnketaCilj/AnketaUcesce preko targeting-a) niti globalni
+    SURVEY_ACTIVATED - korisnici se dodeljuju iskljucivo kroz
+    OnboardingSurveyAssignmentService."""
+    automation_repo = FakeAutomationRepo()
+    service, repo, db = make_service(
+        targeting=FakeTargetingRepo(all_ids={1, 2, 3}), automation_repo=automation_repo
+    )
+    a = make_anketa(repo, status="DRAFT")
+    sec = add_sekcija(repo, a.id, 1)
+    add_pitanje(repo, sec.id, "BOOLEAN", redosled=1, obavezno="D")
+    # NAMERNO bez add_cilj - automatska anketa ne mora imati ciljnu grupu.
+    automation_repo.mark_automatska(a.id)
+
+    service.change_status(_actor(), a.id, "ACTIVE")
+
+    assert a.status == "ACTIVE"
+    assert repo.count_participants(a.id) == 0
+    assert repo.ucesca == []
+    assert service.system_notifications.calls == []
+
+
+def test_obicna_anketa_activation_still_materializes_and_notifies():
+    """Kontrolni test: obicna anketa (bez automatike) mora i dalje raditi
+    identicno kao pre - ciljevi se materijalizuju i SURVEY_ACTIVATED se salje."""
+    service, repo, db = make_service(targeting=FakeTargetingRepo(all_ids={1, 2, 3}))
+    a = _valid_draft(repo)
+
+    service.change_status(_actor(), a.id, "ACTIVE")
+
+    assert a.status == "ACTIVE"
+    assert repo.count_participants(a.id) == 3
+    assert ("enqueue_survey_activated", (a.id,)) in service.system_notifications.calls
 
 
 def test_two_rules_produce_single_participation():

@@ -1,6 +1,6 @@
 import datetime
 
-from sqlalchemy import CHAR, TIMESTAMP, VARCHAR, Numeric
+from sqlalchemy import CHAR, DATE, TIMESTAMP, VARCHAR, Numeric
 from sqlalchemy.dialects.oracle import NCLOB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -29,6 +29,56 @@ class AnketaUcesce(Base):
     datum_izmene: Mapped[datetime.datetime | None] = mapped_column(
         "DATUM_IZMENE", TIMESTAMP(timezone=False), nullable=True
     )
+    # Automatsko (onboarding) ucesce - sve cetiri kolone ispod su NULL kod obicnog
+    # (rucno dodeljenog) ucesca i popunjene ZAJEDNO kod automatskog (CK_ANKETA_UCESCA_AUTOMATIKA).
+    automatika_id: Mapped[int | None] = mapped_column("AUTOMATIKA_ID", Numeric(19, 0), nullable=True)
+    datum_dostupnosti: Mapped[datetime.datetime | None] = mapped_column(
+        "DATUM_DOSTUPNOSTI", TIMESTAMP(timezone=False), nullable=True
+    )
+    datum_isteka: Mapped[datetime.datetime | None] = mapped_column(
+        "DATUM_ISTEKA", TIMESTAMP(timezone=False), nullable=True
+    )
+    datum_zaposlenja_snapshot: Mapped[datetime.date | None] = mapped_column(
+        "DATUM_ZAPOSLENJA_SNAPSHOT", DATE, nullable=True
+    )
+
+    @property
+    def is_automatsko(self) -> bool:
+        return self.automatika_id is not None
+
+    def is_dostupno_sada(self, now: datetime.datetime) -> bool:
+        """Za automatsko ucesce: [DATUM_DOSTUPNOSTI, DATUM_ISTEKA) - istice na pocetku
+        osmog dana, ne diranjem statusa same ankete (proverava se odvojeno)."""
+        if not self.is_automatsko:
+            return True
+        return self.datum_dostupnosti <= now < self.datum_isteka
+
+
+class AnketaAutomatika(Base):
+    """PULS_ANKETA_AUTOMATIKA - pravilo automatske dodele jedne ankete na milestone
+    (7/30/60/90 dana od DATUM_ZAPOSLENJA). Jedna anketa = najvise jedno pravilo
+    (UNIQUE ANKETA_ID). Najvise jedno AKTIVNA='D' pravilo po milestone-u je zasticeno
+    function-based unique indeksom (UX_ANKETA_AUTOMATIKA_AKTIVNA_MILESTONE) - istorijska
+    neaktivna pravila ostaju u tabeli."""
+
+    __tablename__ = "PULS_ANKETA_AUTOMATIKA"
+
+    id: Mapped[int] = mapped_column("ID", Numeric(19, 0), primary_key=True)
+    anketa_id: Mapped[int] = mapped_column("ANKETA_ID", Numeric(19, 0))
+    dani_od_zaposlenja: Mapped[int] = mapped_column("DANI_OD_ZAPOSLENJA", Numeric(3, 0))
+    rok_dana: Mapped[int] = mapped_column("ROK_DANA", Numeric(3, 0), default=7)
+    datum_primene_od: Mapped[datetime.date] = mapped_column("DATUM_PRIMENE_OD", DATE)
+    aktivna: Mapped[str] = mapped_column("AKTIVNA", CHAR(1), default="N")
+    datum_kreiranja: Mapped[datetime.datetime | None] = mapped_column(
+        "DATUM_KREIRANJA", TIMESTAMP(timezone=False), nullable=True
+    )
+    datum_izmene: Mapped[datetime.datetime | None] = mapped_column(
+        "DATUM_IZMENE", TIMESTAMP(timezone=False), nullable=True
+    )
+
+    @property
+    def is_aktivna(self) -> bool:
+        return self.aktivna == "D"
 
 
 class AnketaNacrtOdgovor(Base):

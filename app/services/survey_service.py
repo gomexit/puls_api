@@ -12,6 +12,7 @@ from app.core.exceptions import (
     ValidationBusinessError,
 )
 from app.models.anketa import (
+    ANKETA_STATUS_ACTIVE,
     ANKETA_STATUS_ARCHIVED,
     RATING_RASPON,
     TIPOVI_JEDNA_OPCIJA,
@@ -58,6 +59,27 @@ class SurveyService:
             AuditRepository(db), izvor=self.settings.audit_source
         )
 
+    # --------------------------------------------------- dostupnost (obicno/automatsko)
+    @staticmethod
+    def _is_available(anketa: Anketa, ucesce: AnketaUcesce, now: datetime.datetime) -> bool:
+        """Za automatsko ucesce (AUTOMATIKA_ID IS NOT NULL): dostupnost = per-user
+        prozor [ucesce.datum_dostupnosti, ucesce.datum_isteka) I anketa mora biti
+        ACTIVE (globalni period same ankete se NE proverava). Za obicno ucesce:
+        identicna logika kao ranije (anketa.is_available_to_employees)."""
+        if ucesce.is_automatsko:
+            return anketa.status == ANKETA_STATUS_ACTIVE and ucesce.is_dostupno_sada(now)
+        return anketa.is_available_to_employees(now)
+
+    @staticmethod
+    def _effective_period(anketa: Anketa, ucesce: AnketaUcesce) -> tuple[datetime.datetime, datetime.datetime]:
+        """Datumi koje Android vidi kao datum_pocetka/datum_zavrsetka. Kod automatskog
+        ucesca to su ucesce.datum_dostupnosti/datum_isteka (per-user prozor), inace
+        anketa.datum_pocetka/datum_zavrsetka (globalni period) - ugovor prema Androidu
+        se ne menja, samo izvor vrednosti."""
+        if ucesce.is_automatsko:
+            return ucesce.datum_dostupnosti, ucesce.datum_isteka
+        return anketa.datum_pocetka, anketa.datum_zavrsetka
+
     # ------------------------------------------------------------------- lista
     def list_surveys(self, korisnik: Korisnik) -> tuple[list[dict], int]:
         now = datetime.datetime.now()
@@ -65,7 +87,7 @@ class SurveyService:
         items = []
         za_popunjavanje = 0
         for anketa, ucesce in pairs:
-            available = anketa.is_available_to_employees(now)
+            available = self._is_available(anketa, ucesce, now)
             submitted = ucesce.status == UCESCE_SUBMITTED
             # Prikazi samo trenutno dostupne ili vec predate (istorija).
             # Buduce SCHEDULED (pre pocetka), istekle/CLOSED nepredate se izostavljaju;
@@ -75,12 +97,15 @@ class SurveyService:
             if available and not submitted:
                 za_popunjavanje += 1
             tip = self.repo.get_type(anketa.tip_sifra)
+            datum_pocetka, datum_zavrsetka = self._effective_period(anketa, ucesce)
             items.append(
                 {
                     "anketa": anketa,
                     "tip_naziv": tip.naziv if tip else anketa.tip_sifra,
                     "broj_pitanja": self.repo.count_questions(anketa.id),
                     "moj_status": ucesce.status,
+                    "datum_pocetka": datum_pocetka,
+                    "datum_zavrsetka": datum_zavrsetka,
                 }
             )
         return items, za_popunjavanje
@@ -98,7 +123,7 @@ class SurveyService:
     def get_detail(self, korisnik: Korisnik, survey_id: int) -> dict:
         now = datetime.datetime.now()
         anketa, ucesce = self._require_access(survey_id, korisnik)
-        available = anketa.is_available_to_employees(now)
+        available = self._is_available(anketa, ucesce, now)
         if ucesce.status != UCESCE_SUBMITTED and not available:
             raise SurveyNotActiveError()
 
@@ -118,11 +143,14 @@ class SurveyService:
         anonimna = anketa.is_anonimna
         odgovori_dostupni = not (ucesce.status == UCESCE_SUBMITTED and anonimna)
         moji_odgovori = self._build_my_answers(anketa, ucesce, korisnik, anonimna)
+        datum_pocetka, datum_zavrsetka = self._effective_period(anketa, ucesce)
 
         return {
             "anketa": anketa,
             "tip_naziv": tip.naziv if tip else anketa.tip_sifra,
             "moj_status": ucesce.status,
+            "datum_pocetka": datum_pocetka,
+            "datum_zavrsetka": datum_zavrsetka,
             "datum_predaje": ucesce.datum_predaje,
             "odgovori_dostupni": odgovori_dostupni,
             "sections": sections,
@@ -180,7 +208,7 @@ class SurveyService:
             anketa, ucesce = self._require_access(survey_id, korisnik)
             if ucesce.status == UCESCE_SUBMITTED:
                 raise SurveyAlreadySubmittedError()
-            if not anketa.is_available_to_employees(now):
+            if not self._is_available(anketa, ucesce, now):
                 raise SurveyNotActiveError()
 
             questions = self.repo.get_questions_for_survey(anketa.id)
@@ -240,7 +268,7 @@ class SurveyService:
                 raise SurveyNotTargetedError()
             if ucesce.status == UCESCE_SUBMITTED:
                 raise SurveyAlreadySubmittedError()
-            if not anketa.is_available_to_employees(now):
+            if not self._is_available(anketa, ucesce, now):
                 raise SurveyNotActiveError()
 
             questions = self.repo.get_questions_for_survey(anketa.id)

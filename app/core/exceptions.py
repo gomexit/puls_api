@@ -194,6 +194,18 @@ class AnonymousSurveyResponsesNotAvailableError(PulsApiError):
     message = "Pojedinačni odgovori nisu dostupni za anonimnu anketu."
 
 
+class SurveyAutomationNotAllowedForAnonymousError(PulsApiError):
+    code = "SURVEY_AUTOMATION_NOT_ALLOWED_FOR_ANONYMOUS"
+    status_code = 422
+    message = "Automatska dodela nije dozvoljena za anonimnu anketu."
+
+
+class SurveyAutomationConflictError(PulsApiError):
+    code = "SURVEY_AUTOMATION_CONFLICT"
+    status_code = status.HTTP_409_CONFLICT
+    message = "Već postoji aktivno pravilo automatike za ovaj milestone."
+
+
 # --- Modul OBAVESTENJA ---
 class NotificationNotFoundError(PulsApiError):
     # Generička poruka: isti odgovor za nepostojeće, tuđe, neobjavljeno, buduće,

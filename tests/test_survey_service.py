@@ -1,7 +1,10 @@
+import datetime
+
 import pytest
 
 from app.core.exceptions import (
     SurveyAlreadySubmittedError,
+    SurveyNotActiveError,
     SurveyNotTargetedError,
     ValidationBusinessError,
 )
@@ -325,3 +328,123 @@ def test_submit_uses_ucesce_for_update():
 
     service.submit(_user(), a.id, [OdgovorIn(pitanje_id=q1.id, logicka=True)])
     assert calls["for_update"] == 1
+
+
+# ------------------------------------------------------- automatsko (onboarding) ucesce
+
+
+def _automatic_survey(repo, dostupnost_offset_days=-1, istek_offset_days=6, anketa_status="ACTIVE"):
+    """Anketa sa globalnim periodom koji NE pokriva sada (da dokazemo da se on
+    ignorise za automatsko ucesce) i AnketaUcesce sa sopstvenim per-user prozorom."""
+    now = datetime.datetime.now()
+    a = make_anketa(
+        repo,
+        status=anketa_status,
+        anonimna="N",
+        # globalni period namerno "pogresan" - ne sme uticati na automatsko ucesce
+        datum_pocetka=now - datetime.timedelta(days=100),
+        datum_zavrsetka=now - datetime.timedelta(days=90),
+    )
+    sec = add_sekcija(repo, a.id, 1)
+    q1 = add_pitanje(repo, sec.id, "BOOLEAN", redosled=1, obavezno="D")
+    u = add_ucesce(
+        repo,
+        a.id,
+        USER_ID,
+        status="NOT_STARTED",
+        automatika_id=1,
+        datum_dostupnosti=now + datetime.timedelta(days=dostupnost_offset_days),
+        datum_isteka=now + datetime.timedelta(days=istek_offset_days),
+    )
+    return a, q1, u
+
+
+def test_automatic_ucesce_available_in_window_and_dates_come_from_ucesce():
+    repo = FakeSurveyRepo()
+    a, q1, u = _automatic_survey(repo)
+    service, db = make_service(repo)
+
+    items, za = service.list_surveys(_user())
+    assert len(items) == 1 and za == 1
+    assert items[0]["datum_pocetka"] == u.datum_dostupnosti
+    assert items[0]["datum_zavrsetka"] == u.datum_isteka
+
+    detail = service.get_detail(_user(), a.id)
+    assert detail["datum_pocetka"] == u.datum_dostupnosti
+    assert detail["datum_zavrsetka"] == u.datum_isteka
+
+
+def test_automatic_ucesce_not_yet_available_excluded_from_list():
+    repo = FakeSurveyRepo()
+    a, q1, u = _automatic_survey(repo, dostupnost_offset_days=2, istek_offset_days=9)
+    service, db = make_service(repo)
+
+    items, za = service.list_surveys(_user())
+    assert items == [] and za == 0
+
+
+def test_automatic_ucesce_expired_excluded_from_list():
+    repo = FakeSurveyRepo()
+    a, q1, u = _automatic_survey(repo, dostupnost_offset_days=-10, istek_offset_days=-1)
+    service, db = make_service(repo)
+
+    items, za = service.list_surveys(_user())
+    assert items == [] and za == 0
+
+
+def test_automatic_ucesce_draft_rejected_outside_window():
+    repo = FakeSurveyRepo()
+    a, q1, u = _automatic_survey(repo, dostupnost_offset_days=2, istek_offset_days=9)
+    service, db = make_service(repo)
+
+    with pytest.raises(SurveyNotActiveError):
+        service.save_draft(_user(), a.id, [OdgovorIn(pitanje_id=q1.id, logicka=True)])
+
+
+def test_automatic_ucesce_submit_rejected_outside_window():
+    repo = FakeSurveyRepo()
+    a, q1, u = _automatic_survey(repo, dostupnost_offset_days=-10, istek_offset_days=-1)
+    service, db = make_service(repo)
+
+    with pytest.raises(SurveyNotActiveError):
+        service.submit(_user(), a.id, [OdgovorIn(pitanje_id=q1.id, logicka=True)])
+
+
+def test_automatic_ucesce_requires_survey_active_status():
+    repo = FakeSurveyRepo()
+    # unutar per-user prozora, ali anketa nije ACTIVE (npr. CLOSED) -> nije dostupno
+    a, q1, u = _automatic_survey(repo, anketa_status="CLOSED")
+    service, db = make_service(repo)
+
+    items, za = service.list_surveys(_user())
+    assert items == [] and za == 0
+    with pytest.raises(SurveyNotActiveError):
+        service.submit(_user(), a.id, [OdgovorIn(pitanje_id=q1.id, logicka=True)])
+
+
+def test_automatic_ucesce_submit_within_window_links_user_not_anonymous():
+    repo = FakeSurveyRepo()
+    a, q1, u = _automatic_survey(repo)
+    service, db = make_service(repo)
+
+    ucesce = service.submit(_user(), a.id, [OdgovorIn(pitanje_id=q1.id, logicka=True)])
+    assert ucesce.status == "SUBMITTED"
+    predaja = repo.submissions[0]
+    assert predaja.anonimna == "N"
+    assert predaja.korisnik_id == USER_ID
+
+    detail = service.get_detail(_user(), a.id)
+    assert detail["odgovori_dostupni"] is True
+    assert any(o.pitanje_id == q1.id for o in detail["moji_odgovori"])
+
+
+def test_manual_ucesce_behavior_unchanged_when_automatika_id_null():
+    """Regresija: obicno ucesce (automatika_id None) i dalje koristi anketa period."""
+    repo = FakeSurveyRepo()
+    a, q1, q2 = _conditional_survey(repo)
+    service, db = make_service(repo)
+
+    items, za = service.list_surveys(_user())
+    assert len(items) == 1
+    assert items[0]["datum_pocetka"] == a.datum_pocetka
+    assert items[0]["datum_zavrsetka"] == a.datum_zavrsetka

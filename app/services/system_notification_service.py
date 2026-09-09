@@ -17,6 +17,7 @@ from app.core.config import get_settings
 from app.core.configuration_definitions import validate_https_url
 from app.core.exceptions import ValidationBusinessError
 from app.models.anketa import ANKETA_STATUS_ACTIVE, ANKETA_STATUS_CLOSED
+from app.models.korisnik import STATUS_NALOGA_OMOGUCEN, STATUS_ZAPOSLENJA_AKTIVAN
 from app.models.idea_ciklus import IdeaCiklus
 from app.models.ideja import IDEJA_STATUS_NAGRADJENA, IDEJA_STATUS_TOP_10
 from app.models.obavestenje import AKCIJA_IDEA, AKCIJA_IDEA_CYCLE, AKCIJA_NONE, AKCIJA_SURVEY, AKCIJA_URL
@@ -30,19 +31,24 @@ from app.models.sistemski_dogadjaj import (
     DOGADJAJ_TIP_IDEA_CYCLE_EXPIRING,
     DOGADJAJ_TIP_IDEA_NAGRADJENA,
     DOGADJAJ_TIP_IDEA_TOP_10,
+    DOGADJAJ_TIP_ONBOARDING_SURVEY_AVAILABLE,
     DOGADJAJ_TIP_SURVEY_ACTIVATED,
     DOGADJAJ_TIP_SURVEY_EXPIRING,
     SistemskiDogadjaj,
 )
+from app.models.anketa import UCESCE_SUBMITTED
 from app.repositories.audit_repository import AuditRepository
 from app.repositories.configuration_repository import ConfigurationRepository
 from app.repositories.notification_repository import NotificationRepository
 from app.repositories.notification_targeting_repository import NotificationTargetingRepository
 from app.repositories.push_delivery_repository import PushDeliveryRepository
+from app.repositories.onboarding_automation_repository import OnboardingAutomationRepository
+from app.repositories.survey_repository import SurveyRepository
 from app.repositories.system_event_repository import SystemEventRepository
 from app.services.audit_service import AuditService
 from app.services.configuration_service import ConfigurationService
 from app.services.notification_publishing_service import NotificationPublishingService
+from app.services.onboarding_survey_assignment_service import OnboardingSurveyAssignmentService
 
 logger = logging.getLogger("puls.system_notifications")
 
@@ -68,12 +74,21 @@ class SystemNotificationService:
         targeting_repository: NotificationTargetingRepository | None = None,
         publishing_service: NotificationPublishingService | None = None,
         configuration_service: ConfigurationService | None = None,
+        onboarding_assignment_service: OnboardingSurveyAssignmentService | None = None,
+        automation_repository: OnboardingAutomationRepository | None = None,
         max_attempts: int = 5,
         now_fn: Callable[[], datetime.datetime] = datetime.datetime.now,
     ):
         self.db = db
         settings = get_settings()
         self.event_repo = event_repository or SystemEventRepository(db)
+        self.automation_repo = automation_repository or OnboardingAutomationRepository(db)
+        self.onboarding_assignment = onboarding_assignment_service or OnboardingSurveyAssignmentService(
+            db,
+            automation_repository=self.automation_repo,
+            survey_repository=SurveyRepository(db),
+            event_repository=self.event_repo,
+        )
         self.targeting = targeting_repository or NotificationTargetingRepository(db)
         self.config = configuration_service or ConfigurationService(ConfigurationRepository(db))
         self.publishing = publishing_service or NotificationPublishingService(
@@ -145,17 +160,34 @@ class SystemNotificationService:
         now = self._now()
         window_end = now + datetime.timedelta(hours=EXPIRY_WINDOW_HOURS)
         discovered = 0
+        onboarding_assigned = 0
         try:
+            # Onboarding dodela ide PRE ostalih otkrivanja - kreira nova PULS_ANKETA_UCESCA
+            # cije ce ONBOARDING_SURVEY_AVAILABLE dogadjaje ostatak metode (indirektno,
+            # kroz process_batch kasnije) obraditi; ista transakcija/commit kao dole.
+            # Rezultat se izvestava ODVOJENO (onboarding_assigned), bez uticaja na
+            # postojece znacenje polja "discovered" (SCHEDULED/EXPIRING dogadjaji).
+            onboarding_result = self.onboarding_assignment.assign_due_surveys(now)
+            onboarding_assigned = onboarding_result.get("assigned", 0)
             for anketa in self.event_repo.find_scheduled_surveys_now_active(now):
                 # STATUS mora odraziti stvarnost pre nego sto se dogadjaj enqueue-uje.
+                # Status prelaz SME da se desi i za automatsku anketu - samo globalni
+                # SURVEY_ACTIVATED se preskace za nju (korisnici se obavestavaju
+                # iskljucivo kroz ONBOARDING_SURVEY_AVAILABLE po korisniku).
                 anketa.status = ANKETA_STATUS_ACTIVE
                 anketa.datum_izmene = now
+                if self.automation_repo.get_by_survey_id(anketa.id) is not None:
+                    continue
                 if self.enqueue_survey_activated(anketa.id):
                     discovered += 1
             for anketa in self.event_repo.find_active_surveys_now_expired(now):
                 anketa.status = ANKETA_STATUS_CLOSED
                 anketa.datum_izmene = now
             for anketa in self.event_repo.find_surveys_expiring_within(now, window_end):
+                # Automatska anketa ne dobija globalni SURVEY_EXPIRING podsetnik -
+                # svaki korisnik ima svoj individualni rok (DATUM_ISTEKA na ucescu).
+                if self.automation_repo.get_by_survey_id(anketa.id) is not None:
+                    continue
                 if self.enqueue_survey_expiring(anketa.id, anketa.datum_zavrsetka):
                     discovered += 1
             for ciklus in self.event_repo.find_cycles_expiring_within(now, window_end):
@@ -166,7 +198,7 @@ class SystemNotificationService:
             self.db.rollback()
             logger.exception("Otkrivanje sistemskih dogadjaja nije uspelo.")
             raise
-        return {"discovered": discovered}
+        return {"discovered": discovered, "onboarding_assigned": onboarding_assigned}
 
     # ============================================================= worker: obrada
     def process_batch(self, batch_size: int) -> dict:
@@ -252,7 +284,48 @@ class SystemNotificationService:
             )
         if event.tip_dogadjaja == DOGADJAJ_TIP_APP_VERSION_CHANGED:
             return self._resolve_app_version_changed(event)
+        if event.tip_dogadjaja == DOGADJAJ_TIP_ONBOARDING_SURVEY_AVAILABLE:
+            return self._resolve_onboarding_survey_available(event)
         return None, None
+
+    def _resolve_onboarding_survey_available(self, event: SistemskiDogadjaj):
+        # RESURS_ID sistemskog dogadjaja = UCESCE_ID (dogovoreno); ANKETA_ID iz ucesca
+        # ide u sadrzaj Inbox obavestenja (resurs_id polja content-a), ne u sam dogadjaj.
+        # Fail-closed: SVE dole navedene provere moraju proci, inace SKIPPED (bez
+        # obavestenja i bez FCM reda) - isti mehanizam kao "no recipients/content".
+        ucesce = self.event_repo.get_ucesce(event.resurs_id)
+        now = self._now()
+        if ucesce is None:
+            return None, None
+        if ucesce.automatika_id is None:
+            return None, None
+        if ucesce.datum_dostupnosti is None or ucesce.datum_isteka is None:
+            return None, None
+        if not (ucesce.datum_dostupnosti <= now < ucesce.datum_isteka):
+            return None, None
+        if ucesce.status == UCESCE_SUBMITTED:
+            return None, None
+        anketa = self.event_repo.get_survey(ucesce.anketa_id)
+        if anketa is None or anketa.status != ANKETA_STATUS_ACTIVE or anketa.anonimna != "N":
+            return None, None
+        korisnik = self.event_repo.get_korisnik(ucesce.korisnik_id)
+        if korisnik is None:
+            return None, None
+        if korisnik.status_zaposlenja != STATUS_ZAPOSLENJA_AKTIVAN:
+            return None, None
+        if korisnik.status_naloga != STATUS_NALOGA_OMOGUCEN:
+            return None, None
+        recipients = {ucesce.korisnik_id}
+        content = {
+            "naslov": "Nova anketa je dostupna",
+            "kratak_tekst": "Vaša onboarding anketa je sada dostupna.",
+            "sadrzaj": "Vaša onboarding anketa je sada dostupna za popunjavanje.",
+            "akcija_tip": AKCIJA_SURVEY,
+            "resurs_id": ucesce.anketa_id,
+            "akcija_url": None,
+            "datum_isteka": ucesce.datum_isteka,
+        }
+        return recipients, content
 
     def _resolve_survey_activated(self, event: SistemskiDogadjaj):
         anketa = self.event_repo.get_survey(event.resurs_id)

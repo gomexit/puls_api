@@ -1,6 +1,6 @@
 import datetime
 
-from sqlalchemy import CHAR, TIMESTAMP, VARCHAR, Integer, Numeric
+from sqlalchemy import CHAR, DATE, TIMESTAMP, VARCHAR, Integer, Numeric
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.session import Base
@@ -58,6 +58,11 @@ class Korisnik(Base):
     )
     datum_izmene: Mapped[datetime.datetime | None] = mapped_column(
         "DATUM_IZMENE", TIMESTAMP(timezone=False), nullable=True
+    )
+    # Prvo zaposlenje ikada - MIN(TRUNC(DATUMOD)) iz HR.UGOVOR_RADNO_MESTO, sinhronizovano
+    # od strane PULS_SINHRONIZUJ_KORISNIKE. Nullable dok se ne izracuna/sinhronizuje.
+    datum_zaposlenja: Mapped[datetime.date | None] = mapped_column(
+        "DATUM_ZAPOSLENJA", DATE, nullable=True
     )
 
     def is_eligible_to_login(self) -> bool:

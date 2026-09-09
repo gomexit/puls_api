@@ -53,6 +53,20 @@ class FakeTargetingRepo:
         return self._by_platni.get(platni)
 
 
+class FakeAutomationRepo:
+    """Fake OnboardingAutomationRepository - koristi se u SurveyAdminService testovima
+    da simulira prisustvo/odsustvo PULS_ANKETA_AUTOMATIKA reda za anketu."""
+
+    def __init__(self):
+        self.by_survey: dict[int, object] = {}
+
+    def get_by_survey_id(self, anketa_id):
+        return self.by_survey.get(anketa_id)
+
+    def mark_automatska(self, anketa_id: int) -> None:
+        self.by_survey[anketa_id] = object()
+
+
 class FakeSurveyRepo:
     def __init__(self):
         self.types: dict[str, AnketaTip] = {}
@@ -309,7 +323,25 @@ def add_cilj(repo, anketa_id, tip_cilja, vrednost=None):
     )
 
 
-def add_ucesce(repo, anketa_id, korisnik_id, status="NOT_STARTED"):
+def add_ucesce(
+    repo,
+    anketa_id,
+    korisnik_id,
+    status="NOT_STARTED",
+    automatika_id=None,
+    datum_dostupnosti=None,
+    datum_isteka=None,
+    datum_zaposlenja_snapshot=None,
+):
     return repo.add_ucesce(
-        AnketaUcesce(anketa_id=anketa_id, korisnik_id=korisnik_id, status=status, datum_kreiranja=datetime.datetime.now())
+        AnketaUcesce(
+            anketa_id=anketa_id,
+            korisnik_id=korisnik_id,
+            status=status,
+            datum_kreiranja=datetime.datetime.now(),
+            automatika_id=automatika_id,
+            datum_dostupnosti=datum_dostupnosti,
+            datum_isteka=datum_isteka,
+            datum_zaposlenja_snapshot=datum_zaposlenja_snapshot,
+        )
     )

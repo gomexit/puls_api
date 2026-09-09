@@ -68,13 +68,29 @@ def _anketa():
 
 class _StubSurveyService:
     def list_surveys(self, korisnik):
-        return ([{"anketa": _anketa(), "tip_naziv": "Pulse", "broj_pitanja": 3, "moj_status": "NOT_STARTED"}], 1)
+        a = _anketa()
+        return (
+            [
+                {
+                    "anketa": a,
+                    "tip_naziv": "Pulse",
+                    "broj_pitanja": 3,
+                    "moj_status": "NOT_STARTED",
+                    "datum_pocetka": a.datum_pocetka,
+                    "datum_zavrsetka": a.datum_zavrsetka,
+                }
+            ],
+            1,
+        )
 
     def get_detail(self, korisnik, survey_id):
+        a = _anketa()
         return {
-            "anketa": _anketa(),
+            "anketa": a,
             "tip_naziv": "Pulse",
             "moj_status": "IN_PROGRESS",
+            "datum_pocetka": a.datum_pocetka,
+            "datum_zavrsetka": a.datum_zavrsetka,
             "datum_predaje": None,
             "odgovori_dostupni": True,
             "sections": [],

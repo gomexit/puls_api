@@ -23,7 +23,7 @@ def _err(msg: str) -> ValidationBusinessError:
     return ValidationBusinessError(msg)
 
 
-def validate_structure(repo, targeting_repo, anketa: Anketa) -> None:
+def validate_structure(repo, targeting_repo, anketa: Anketa, require_targets: bool = True) -> None:
     tip = repo.get_type(anketa.tip_sifra)
     if tip is None or tip.aktivan != "D":
         raise _err("Anketa mora imati aktivan tip.")
@@ -80,10 +80,13 @@ def validate_structure(repo, targeting_repo, anketa: Anketa) -> None:
 
             _validate_condition_values(control, vrednosti, options_by_q.get(control.id, []))
 
-    # Ciljne grupe
+    # Ciljne grupe - automatska (onboarding) anketa se dodeljuje iskljucivo kroz
+    # OnboardingSurveyAssignmentService i ne mora imati ciljnu grupu (require_targets=False).
     targets = repo.get_targets(anketa.id)
     if not targets:
-        raise _err("Anketa mora imati najmanje jednu ciljnu grupu.")
+        if require_targets:
+            raise _err("Anketa mora imati najmanje jednu ciljnu grupu.")
+        return
     for t in targets:
         if t.tip_cilja in CILJEVI_NEPODRZANI:
             raise _err(

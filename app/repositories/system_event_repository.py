@@ -8,7 +8,6 @@ from sqlalchemy.orm import Session
 
 from app.models.anketa import (
     ANKETA_STATUS_ACTIVE,
-    ANKETA_STATUS_CLOSED,
     ANKETA_STATUS_SCHEDULED,
     UCESCE_SUBMITTED,
     Anketa,
@@ -16,6 +15,7 @@ from app.models.anketa import (
 from app.models.anketa_ucesce import AnketaUcesce
 from app.models.idea_ciklus import CIKLUS_STATUS_AKTIVAN, IdeaCiklus
 from app.models.ideja import Ideja
+from app.models.korisnik import Korisnik
 from app.models.sistemski_dogadjaj import DOGADJAJ_STATUS_PENDING, SistemskiDogadjaj
 
 
@@ -130,6 +130,12 @@ class SystemEventRepository:
 
     def get_idea(self, idea_id: int) -> Ideja | None:
         return self.db.get(Ideja, idea_id)
+
+    def get_ucesce(self, ucesce_id: int) -> AnketaUcesce | None:
+        return self.db.get(AnketaUcesce, ucesce_id)
+
+    def get_korisnik(self, korisnik_id: int) -> Korisnik | None:
+        return self.db.get(Korisnik, korisnik_id)
 
     def survey_participant_ids(self, survey_id: int) -> set[int]:
         stmt = select(AnketaUcesce.korisnik_id).where(AnketaUcesce.anketa_id == survey_id)

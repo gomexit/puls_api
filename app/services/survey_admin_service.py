@@ -38,6 +38,7 @@ from app.models.anketa_struktura import (
 from app.models.anketa_ucesce import AnketaUcesce
 from app.models.korisnik import Korisnik
 from app.repositories.audit_repository import AuditRepository
+from app.repositories.onboarding_automation_repository import OnboardingAutomationRepository
 from app.repositories.survey_repository import SurveyRepository
 from app.repositories.survey_targeting_repository import SurveyTargetingRepository
 from app.services.audit_service import AuditAction, AuditService
@@ -56,6 +57,7 @@ class SurveyAdminService:
         targeting_repository: SurveyTargetingRepository | None = None,
         audit_service: AuditService | None = None,
         system_notification_service: SystemNotificationService | None = None,
+        automation_repository: OnboardingAutomationRepository | None = None,
     ):
         self.db = db
         self.settings = get_settings()
@@ -65,6 +67,7 @@ class SurveyAdminService:
             AuditRepository(db), izvor=self.settings.audit_source
         )
         self.system_notifications = system_notification_service or SystemNotificationService(db)
+        self.automation_repo = automation_repository or OnboardingAutomationRepository(db)
 
     # ------------------------------------------------------------------ tipovi
     def list_types(self) -> list[AnketaTip]:
@@ -286,13 +289,17 @@ class SurveyAdminService:
                 ANKETA_STATUS_ACTIVE,
             )
             now = datetime.datetime.now()
+            is_automatska = self.automation_repo.get_by_survey_id(anketa.id) is not None
             if first_exit:
                 # Struktura se validira i ciljevi materijalizuju samo jednom - pri
-                # prvom izlasku iz DRAFT.
-                validate_structure(self.repo, self.targeting, anketa)
+                # prvom izlasku iz DRAFT. Automatska (onboarding) anketa ne mora imati
+                # ciljnu grupu - dodeljuje se iskljucivo kroz
+                # OnboardingSurveyAssignmentService, nikad kroz globalno ciljanje.
+                validate_structure(self.repo, self.targeting, anketa, require_targets=not is_automatska)
                 if novi_status == ANKETA_STATUS_SCHEDULED and anketa.datum_pocetka <= now:
                     raise ValidationBusinessError("Za SCHEDULED datum početka mora biti u budućnosti.")
-                self._materialize_targets(anketa, now)
+                if not is_automatska:
+                    self._materialize_targets(anketa, now)
 
             # Prelazak u ACTIVE (DRAFT->ACTIVE i SCHEDULED->ACTIVE) mora biti unutar perioda.
             if novi_status == ANKETA_STATUS_ACTIVE and not anketa.is_within_period(now):
@@ -308,9 +315,11 @@ class SurveyAdminService:
                 entitet_id=str(anketa.id),
                 detalji=novi_status,
             )
-            if novi_status == ANKETA_STATUS_ACTIVE:
+            if novi_status == ANKETA_STATUS_ACTIVE and not is_automatska:
                 # Enqueue je deo ISTE transakcije (bez sopstvenog commit-a) - sistemski
                 # notification worker ce kasnije materijalizovati Inbox obavestenje.
+                # Automatska anketa NE dobija globalni SURVEY_ACTIVATED - korisnici se
+                # dodeljuju/obavestavaju iskljucivo kroz onboarding assignment tok.
                 self.system_notifications.enqueue_survey_activated(anketa.id)
             self.db.commit()
             return anketa

@@ -61,6 +61,53 @@ def make_ideja(**ov) -> SimpleNamespace:
     return SimpleNamespace(**defaults)
 
 
+def make_korisnik(**ov) -> SimpleNamespace:
+    defaults = dict(id=_next_id(), status_zaposlenja="AKTIVAN", status_naloga="OMOGUCEN")
+    defaults.update(ov)
+    return SimpleNamespace(**defaults)
+
+
+def make_ucesce(**ov) -> SimpleNamespace:
+    defaults = dict(
+        id=_next_id(),
+        anketa_id=1,
+        korisnik_id=1,
+        status="NOT_STARTED",
+        automatika_id=1,
+        datum_dostupnosti=datetime.datetime(2020, 1, 1),
+        datum_isteka=datetime.datetime(2030, 1, 1),
+    )
+    defaults.update(ov)
+    return SimpleNamespace(**defaults)
+
+
+class FakeOnboardingAssignmentService:
+    """No-op po default - postojeci SystemNotificationService testovi ne ispituju
+    onboarding dodelu i nemaju pravu (SQL-sposobnu) fake bazu iza sebe."""
+
+    def __init__(self):
+        self.calls = 0
+
+    def assign_due_surveys(self, now):
+        self.calls += 1
+        return {"assigned": 0}
+
+
+class FakeAutomationRepo:
+    """Fake OnboardingAutomationRepository - koristi se u SystemNotificationService
+    testovima da oznaci koje ankete imaju PULS_ANKETA_AUTOMATIKA red (automatske/
+    onboarding ankete koje ne dobijaju globalni SURVEY_ACTIVATED/SURVEY_EXPIRING)."""
+
+    def __init__(self):
+        self.by_survey: dict[int, object] = {}
+
+    def get_by_survey_id(self, anketa_id):
+        return self.by_survey.get(anketa_id)
+
+    def mark_automatska(self, anketa_id: int) -> None:
+        self.by_survey[anketa_id] = object()
+
+
 class FakeSystemEventRepo:
     def __init__(self):
         self.events: dict[int, SistemskiDogadjaj] = {}
@@ -73,6 +120,8 @@ class FakeSystemEventRepo:
         # ciklus_id -> set(korisnik_id) koji imaju bar jednu ideju
         self.cycle_idea_authors: dict[int, set[int]] = {}
         self.enqueue_calls: list[str] = []
+        self.ucesca: dict[int, SimpleNamespace] = {}
+        self.korisnici: dict[int, SimpleNamespace] = {}
 
     # --- setup helpers ---
     def seed_survey(self, anketa: SimpleNamespace, participants: list[tuple[int, str]] | None = None):
@@ -88,6 +137,14 @@ class FakeSystemEventRepo:
     def seed_idea(self, ideja: SimpleNamespace):
         self.ideas[ideja.id] = ideja
         return ideja
+
+    def seed_ucesce(self, ucesce: SimpleNamespace):
+        self.ucesca[ucesce.id] = ucesce
+        return ucesce
+
+    def seed_korisnik(self, korisnik: SimpleNamespace):
+        self.korisnici[korisnik.id] = korisnik
+        return korisnik
 
     # --- enqueue ---
     def enqueue_if_absent(self, kljuc, tip, resurs_id, vrednost, now) -> bool:
@@ -160,6 +217,12 @@ class FakeSystemEventRepo:
 
     def get_idea(self, idea_id):
         return self.ideas.get(idea_id)
+
+    def get_ucesce(self, ucesce_id):
+        return self.ucesca.get(ucesce_id)
+
+    def get_korisnik(self, korisnik_id):
+        return self.korisnici.get(korisnik_id)
 
     def survey_participant_ids(self, survey_id):
         return {uid for uid, _status in self.survey_participants.get(survey_id, [])}
