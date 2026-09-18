@@ -63,6 +63,11 @@ class PitanjeOut(BaseModel):
     id: int
     tekst: str
     tip: str
+    # Familija UI kontrole + parametri iz PULS_ANKETA_TIPOVI_PITANJA - klijent crta
+    # po `komponenta`, a `tip` ostaje sifra tipa (kompatibilnost sa starijim klijentima).
+    komponenta: str | None = None
+    min_vrednost: int | None = None
+    max_vrednost: int | None = None
     obavezno: bool
     redosled: int
     opcije: list[OpcijaOut]
@@ -301,10 +306,27 @@ class AdminOpcijaOut(BaseModel):
     redosled: int
 
 
+class QuestionTypeOut(BaseModel):
+    sifra: str
+    naziv: str
+    komponenta: str
+    min_vrednost: int | None = None
+    max_vrednost: int | None = None
+
+
+class QuestionTypeListResponse(BaseModel):
+    items: list[QuestionTypeOut]
+
+
 class AdminPitanjeOut(BaseModel):
     id: int
     tekst: str
     tip: str
+    # Familija UI kontrole + parametri iz PULS_ANKETA_TIPOVI_PITANJA - klijent crta
+    # po `komponenta`, a `tip` ostaje sifra tipa (kompatibilnost sa starijim klijentima).
+    komponenta: str | None = None
+    min_vrednost: int | None = None
+    max_vrednost: int | None = None
     obavezno: bool
     redosled: int
     opcije: list[AdminOpcijaOut]

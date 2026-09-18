@@ -40,6 +40,7 @@ class PitanjeStatOut(BaseModel):
     sekcija_naziv: str
     tekst: str
     tip_pitanja: str
+    komponenta: str | None = None
     sekcija_redosled: int
     pitanje_redosled: int
     broj_odgovora: int

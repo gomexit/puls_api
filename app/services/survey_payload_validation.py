@@ -12,9 +12,8 @@ from app.models.anketa import (
     OPERATOR_IN,
     OPERATORI,
     TIPOVI_CILJA,
-    TIPOVI_PITANJA,
-    TIPOVI_SA_OPCIJAMA,
 )
+from app.services.question_types import get_question_type
 
 
 def _err(msg: str) -> ValidationBusinessError:
@@ -38,7 +37,8 @@ def validate_admin_survey_payload(payload) -> None:
         if len({q.redosled for q in s.pitanja}) != len(s.pitanja):
             raise _err("Redosled pitanja u sekciji mora biti jedinstven.")
         for q in s.pitanja:
-            if q.tip not in TIPOVI_PITANJA:
+            tip_def = get_question_type(q.tip)
+            if tip_def is None or not tip_def.aktivan:
                 raise _err("Nepoznat tip pitanja.")
             if q.kljuc is not None:
                 if q.kljuc in question_keys:
@@ -75,7 +75,7 @@ def validate_admin_survey_payload(payload) -> None:
                 raise _err("EQUALS/NOT_EQUALS uslov mora imati tačno jednu vrednost.")
 
             control = question_keys[u.pitanje_kljuc]
-            if control.tip in TIPOVI_SA_OPCIJAMA:
+            if get_question_type(control.tip).ima_opcije:
                 valid_opt_keys = option_keys_by_qkey.get(u.pitanje_kljuc, set())
                 for v in u.vrednosti:
                     if v not in valid_opt_keys:

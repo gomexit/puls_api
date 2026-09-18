@@ -9,16 +9,12 @@ zavisno pitanje NIJE vidljivo.
 from dataclasses import dataclass, field
 
 from app.models.anketa import (
+    KOMP_BOOLEAN,
     OPERATOR_EQUALS,
     OPERATOR_IN,
     OPERATOR_NOT_EQUALS,
-    TIP_BOOLEAN,
-    TIP_MULTI_CHOICE,
-    TIP_RATING_1_5,
-    TIP_RATING_1_10,
-    TIP_SINGLE_CHOICE,
-    TIP_DROPDOWN,
 )
+from app.services.question_types import get_question_type
 
 
 @dataclass
@@ -40,28 +36,30 @@ class QuestionSpec:
 
 def answer_tokens(tip: str, value: AnswerValue | None) -> set[str]:
     """Normalizuje odgovor u skup string tokena za poredjenje sa uslovom."""
-    if value is None:
+    tip_def = get_question_type(tip)
+    if value is None or tip_def is None:
         return set()
-    if tip in (TIP_SINGLE_CHOICE, TIP_DROPDOWN, TIP_MULTI_CHOICE):
+    if tip_def.ima_opcije:
         return {str(oid) for oid in value.opcija_ids}
-    if tip == TIP_BOOLEAN:
+    if tip_def.komponenta == KOMP_BOOLEAN:
         if value.logicka is None:
             return set()
         return {"true" if value.logicka else "false"}
-    if tip in (TIP_RATING_1_5, TIP_RATING_1_10):
+    if tip_def.je_skala:
         return set() if value.broj is None else {str(value.broj)}
     # TEXT ne moze biti kontrolno pitanje.
     return set()
 
 
 def is_answered(tip: str, value: AnswerValue | None) -> bool:
-    if value is None:
+    tip_def = get_question_type(tip)
+    if value is None or tip_def is None:
         return False
-    if tip in (TIP_SINGLE_CHOICE, TIP_DROPDOWN, TIP_MULTI_CHOICE):
+    if tip_def.ima_opcije:
         return bool(value.opcija_ids)
-    if tip == TIP_BOOLEAN:
+    if tip_def.komponenta == KOMP_BOOLEAN:
         return value.logicka is not None
-    if tip in (TIP_RATING_1_5, TIP_RATING_1_10):
+    if tip_def.je_skala:
         return value.broj is not None
     return value.tekst is not None and value.tekst.strip() != ""
 

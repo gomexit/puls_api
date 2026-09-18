@@ -17,6 +17,7 @@ from app.schemas.survey import (
     SurveyListResponse,
     UslovOut,
 )
+from app.services.question_types import get_question_type
 from app.services.survey_service import SurveyService
 
 router = APIRouter(prefix="/surveys", tags=["Surveys"])
@@ -72,11 +73,15 @@ def _build_detail(d: dict) -> SurveyDetailResponse:
                     operator=q.uslov_operator,
                     vrednosti=d["uslov_by_q"].get(q.id, []),
                 )
+            tip_def = get_question_type(q.tip_pitanja)
             pitanja_out.append(
                 PitanjeOut(
                     id=q.id,
                     tekst=q.tekst,
                     tip=q.tip_pitanja,
+                    komponenta=tip_def.komponenta if tip_def else None,
+                    min_vrednost=tip_def.min_vrednost if tip_def else None,
+                    max_vrednost=tip_def.max_vrednost if tip_def else None,
                     obavezno=q.obavezno_bool,
                     redosled=int(q.redosled),
                     opcije=opcije,

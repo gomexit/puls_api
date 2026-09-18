@@ -9,14 +9,12 @@ from app.models.anketa import (
     CILJEVI_NEPODRZANI,
     CILJ_ORGJED,
     CILJ_PLATNI_BROJ,
+    KOMP_BOOLEAN,
+    KOMP_TEXT,
     OPERATOR_IN,
-    RATING_RASPON,
-    TIPOVI_BEZ_OPCIJA,
-    TIPOVI_SA_OPCIJAMA,
-    TIP_BOOLEAN,
-    TIP_TEXT,
     Anketa,
 )
+from app.services.question_types import get_question_type
 
 
 def _err(msg: str) -> ValidationBusinessError:
@@ -54,9 +52,12 @@ def validate_structure(repo, targeting_repo, anketa: Anketa, require_targets: bo
 
     for q in questions:
         opts = options_by_q.get(q.id, [])
-        if q.tip_pitanja in TIPOVI_SA_OPCIJAMA and not opts:
+        tip_def = get_question_type(q.tip_pitanja)
+        if tip_def is None:
+            raise _err("Nepoznat tip pitanja.")
+        if tip_def.ima_opcije and not opts:
             raise _err("Pitanje sa izborom mora imati ponuđene opcije.")
-        if q.tip_pitanja in TIPOVI_BEZ_OPCIJA and opts:
+        if not tip_def.ima_opcije and opts:
             raise _err("Pitanje ovog tipa ne sme imati ponuđene opcije.")
 
         if q.uslov_pitanje_id is not None:
@@ -67,7 +68,10 @@ def validate_structure(repo, targeting_repo, anketa: Anketa, require_targets: bo
                 raise _err("Pitanje ne može zavisiti od samog sebe.")
             if order_index[control.id] >= order_index[q.id]:
                 raise _err("Uslovno pitanje mora biti posle kontrolnog pitanja.")
-            if control.tip_pitanja == TIP_TEXT:
+            control_def = get_question_type(control.tip_pitanja)
+            if control_def is None:
+                raise _err("Nepoznat tip pitanja.")
+            if control_def.komponenta == KOMP_TEXT:
                 raise _err("Kontrolno pitanje ne sme biti tipa TEXT.")
 
             vrednosti = uslov_by_q.get(q.id, [])
@@ -78,7 +82,7 @@ def validate_structure(repo, targeting_repo, anketa: Anketa, require_targets: bo
                 if len(vrednosti) != 1:
                     raise _err("EQUALS/NOT_EQUALS uslov mora imati tačno jednu vrednost.")
 
-            _validate_condition_values(control, vrednosti, options_by_q.get(control.id, []))
+            _validate_condition_values(control_def, vrednosti, options_by_q.get(control.id, []))
 
     # Ciljne grupe - automatska (onboarding) anketa se dodeljuje iskljucivo kroz
     # OnboardingSurveyAssignmentService i ne mora imati ciljnu grupu (require_targets=False).
@@ -99,19 +103,18 @@ def validate_structure(repo, targeting_repo, anketa: Anketa, require_targets: bo
             raise _err("Ciljani platni broj ne postoji među aktivnim korisnicima.")
 
 
-def _validate_condition_values(control, vrednosti: list[str], control_options: list) -> None:
-    tip = control.tip_pitanja
-    if tip in TIPOVI_SA_OPCIJAMA:
+def _validate_condition_values(control_def, vrednosti: list[str], control_options: list) -> None:
+    if control_def.ima_opcije:
         valid_ids = {str(o.id) for o in control_options}
         for v in vrednosti:
             if v not in valid_ids:
                 raise _err("Vrednost uslova ne pripada opcijama kontrolnog pitanja.")
-    elif tip == TIP_BOOLEAN:
+    elif control_def.komponenta == KOMP_BOOLEAN:
         for v in vrednosti:
             if v not in ("true", "false"):
                 raise _err("Vrednost uslova za BOOLEAN mora biti 'true' ili 'false'.")
-    elif tip in RATING_RASPON:
-        lo, hi = RATING_RASPON[tip]
+    elif control_def.je_skala:
+        lo, hi = control_def.raspon
         for v in vrednosti:
             if not v.isdigit() or not (lo <= int(v) <= hi):
                 raise _err(f"Vrednost uslova za ocenu mora biti broj {lo}-{hi}.")

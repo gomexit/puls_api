@@ -17,14 +17,11 @@ from app.core.exceptions import (
     SurveyNotFoundError,
 )
 from app.models.anketa import (
-    RATING_RASPON,
-    TIP_BOOLEAN,
-    TIP_RATING_1_10,
-    TIP_RATING_1_5,
-    TIPOVI_SA_OPCIJAMA,
+    KOMP_BOOLEAN,
 )
 from app.repositories.survey_repository import SurveyRepository
 from app.repositories.survey_results_repository import SurveyResultsRepository
+from app.services.question_types import get_question_type
 
 
 def _pct(numerator: int, denominator: int) -> float:
@@ -135,7 +132,11 @@ class SurveyResultsService:
                 "broj_odgovora": broj_odgovora,
             }
 
-            if q.tip_pitanja in TIPOVI_SA_OPCIJAMA:
+            tip_def = get_question_type(q.tip_pitanja)
+            item["komponenta"] = tip_def.komponenta if tip_def else None
+            if tip_def is None:
+                pass
+            elif tip_def.ima_opcije:
                 counts_for_q = option_counts.get(q.id, {})
                 item["opcije"] = [
                     {
@@ -146,16 +147,16 @@ class SurveyResultsService:
                     }
                     for o in sorted(opts_by_q.get(q.id, []), key=lambda x: x.redosled)
                 ]
-            elif q.tip_pitanja == TIP_BOOLEAN:
+            elif tip_def.komponenta == KOMP_BOOLEAN:
                 bc = bool_counts.get(q.id, {})
                 da = bc.get("D", 0)
                 ne = bc.get("N", 0)
                 total_bool = da + ne
                 item["da"] = {"broj": da, "procenat": _pct(da, total_bool)}
                 item["ne"] = {"broj": ne, "procenat": _pct(ne, total_bool)}
-            elif q.tip_pitanja in (TIP_RATING_1_5, TIP_RATING_1_10):
+            elif tip_def.je_skala:
                 vc = rating_counts.get(q.id, {})
-                lo, hi = RATING_RASPON[q.tip_pitanja]
+                lo, hi = tip_def.raspon
                 total_r = sum(vc.values())
                 if total_r == 0:
                     item["prosek"] = None

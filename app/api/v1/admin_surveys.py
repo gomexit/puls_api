@@ -21,11 +21,14 @@ from app.schemas.survey import (
     AdminSurveyStatusRequest,
     AdminSurveyUpdateRequest,
     AdminUslovOut,
+    QuestionTypeListResponse,
+    QuestionTypeOut,
     SurveyTypeCreateRequest,
     SurveyTypeListResponse,
     SurveyTypePatchRequest,
     SurveyTypeResponse,
 )
+from app.services.question_types import get_question_type, list_question_types
 from app.services.survey_admin_service import SurveyAdminService
 
 router = APIRouter(prefix="/admin", tags=["Admin Surveys"])
@@ -68,6 +71,25 @@ def patch_survey_type(
     service: SurveyAdminService = Depends(get_survey_admin_service),
 ) -> SurveyTypeResponse:
     return _type_out(service.update_type(actor, type_code, payload.naziv, payload.aktivan))
+
+
+# ------------------------------------------------------------------ question types
+@router.get("/survey-question-types", response_model=QuestionTypeListResponse)
+def list_survey_question_types(
+    _: Korisnik = Depends(require_portal_admin_or_hr),
+) -> QuestionTypeListResponse:
+    return QuestionTypeListResponse(
+        items=[
+            QuestionTypeOut(
+                sifra=t.sifra,
+                naziv=t.naziv,
+                komponenta=t.komponenta,
+                min_vrednost=t.min_vrednost,
+                max_vrednost=t.max_vrednost,
+            )
+            for t in list_question_types()
+        ]
+    )
 
 
 # ------------------------------------------------------------------ surveys
@@ -153,11 +175,15 @@ def _build_admin_detail(service: SurveyAdminService, anketa) -> AdminSurveyDetai
                     operator=q.uslov_operator,
                     vrednosti=uslov_by_q.get(q.id, []),
                 )
+            tip_def = get_question_type(q.tip_pitanja)
             pitanja.append(
                 AdminPitanjeOut(
                     id=q.id,
                     tekst=q.tekst,
                     tip=q.tip_pitanja,
+                    komponenta=tip_def.komponenta if tip_def else None,
+                    min_vrednost=tip_def.min_vrednost if tip_def else None,
+                    max_vrednost=tip_def.max_vrednost if tip_def else None,
                     obavezno=q.obavezno_bool,
                     redosled=int(q.redosled),
                     opcije=[

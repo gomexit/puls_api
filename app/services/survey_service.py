@@ -14,12 +14,8 @@ from app.core.exceptions import (
 from app.models.anketa import (
     ANKETA_STATUS_ACTIVE,
     ANKETA_STATUS_ARCHIVED,
-    RATING_RASPON,
-    TIPOVI_JEDNA_OPCIJA,
-    TIPOVI_SA_OPCIJAMA,
-    TIP_BOOLEAN,
-    TIP_MULTI_CHOICE,
-    TIP_TEXT,
+    KOMP_BOOLEAN,
+    KOMP_TEXT,
     UCESCE_IN_PROGRESS,
     UCESCE_NOT_STARTED,
     UCESCE_SUBMITTED,
@@ -31,6 +27,7 @@ from app.models.korisnik import Korisnik
 from app.repositories.audit_repository import AuditRepository
 from app.repositories.survey_repository import SurveyRepository
 from app.services.audit_service import AuditAction, AuditService
+from app.services.question_types import get_question_type
 from app.services.survey_visibility import AnswerValue, QuestionSpec, compute_visibility
 
 
@@ -359,37 +356,36 @@ class SurveyService:
         return result
 
     def _validate_one(self, q, od, valid_option_ids: set[int]) -> AnswerValue:
-        tip = q.tip_pitanja
+        tip_def = get_question_type(q.tip_pitanja)
+        if tip_def is None:
+            raise ValidationBusinessError("Nepoznat tip pitanja.")
         opcija_ids = list(dict.fromkeys(od.opcija_ids or []))
 
-        if tip in TIPOVI_SA_OPCIJAMA:
+        if tip_def.ima_opcije:
             if any(o not in valid_option_ids for o in opcija_ids):
                 raise ValidationBusinessError("Izabrana opcija ne pripada pitanju.")
             if od.tekst or od.broj is not None or od.logicka is not None:
                 raise ValidationBusinessError("Polja koja ne pripadaju tipu pitanja moraju biti prazna.")
-            if opcija_ids:
-                if tip in TIPOVI_JEDNA_OPCIJA and len(opcija_ids) != 1:
-                    raise ValidationBusinessError("Ovo pitanje dozvoljava tačno jednu opciju.")
-                if tip == TIP_MULTI_CHOICE and len(opcija_ids) < 1:
-                    raise ValidationBusinessError("Izaberite najmanje jednu opciju.")
+            if opcija_ids and tip_def.jedna_opcija and len(opcija_ids) != 1:
+                raise ValidationBusinessError("Ovo pitanje dozvoljava tačno jednu opciju.")
             return AnswerValue(opcija_ids=opcija_ids)
 
-        if tip == TIP_TEXT:
+        if tip_def.komponenta == KOMP_TEXT:
             if od.broj is not None or od.logicka is not None or opcija_ids:
                 raise ValidationBusinessError("TEXT pitanje koristi samo tekst.")
             tekst = od.tekst.strip() if od.tekst else None
             return AnswerValue(tekst=tekst or None)
 
-        if tip == TIP_BOOLEAN:
+        if tip_def.komponenta == KOMP_BOOLEAN:
             if od.tekst or od.broj is not None or opcija_ids:
                 raise ValidationBusinessError("BOOLEAN pitanje koristi samo logičku vrednost.")
             return AnswerValue(logicka=od.logicka)
 
-        if tip in RATING_RASPON:
+        if tip_def.je_skala:
             if od.tekst or od.logicka is not None or opcija_ids:
                 raise ValidationBusinessError("RATING pitanje koristi samo broj.")
             if od.broj is not None:
-                lo, hi = RATING_RASPON[tip]
+                lo, hi = tip_def.raspon
                 if not (lo <= od.broj <= hi):
                     raise ValidationBusinessError(f"Ocena mora biti u opsegu {lo}-{hi}.")
             return AnswerValue(broj=od.broj)

@@ -43,33 +43,27 @@ def is_valid_survey_transition(trenutni: str, novi: str) -> bool:
     return novi in ANKETA_DOZVOLJENI_PRELAZI.get(trenutni, frozenset())
 
 
-# --- Tipovi pitanja (trenutno podrzani UI tipovi - nije slobodno prosiriva lista) ---
-TIP_SINGLE_CHOICE = "SINGLE_CHOICE"
-TIP_MULTI_CHOICE = "MULTI_CHOICE"
-TIP_TEXT = "TEXT"
-TIP_RATING_1_5 = "RATING_1_5"
-TIP_RATING_1_10 = "RATING_1_10"
-TIP_BOOLEAN = "BOOLEAN"
-TIP_DROPDOWN = "DROPDOWN"
+# --- Komponente pitanja ---
+# Tip pitanja je red u PULS_ANKETA_TIPOVI_PITANJA (administrira se iz baze); kod
+# poznaje samo KOMPONENTU - familiju UI kontrole i oblika odgovora. Novi tip (npr.
+# RATING_1_4) je nov red sa postojecom komponentom, bez izmene koda.
+KOMP_SINGLE_CHOICE = "SINGLE_CHOICE"
+KOMP_MULTI_CHOICE = "MULTI_CHOICE"
+KOMP_DROPDOWN = "DROPDOWN"
+KOMP_TEXT = "TEXT"
+KOMP_BOOLEAN = "BOOLEAN"
+KOMP_SCALE = "SCALE"
 
-TIPOVI_PITANJA = (
-    TIP_SINGLE_CHOICE,
-    TIP_MULTI_CHOICE,
-    TIP_TEXT,
-    TIP_RATING_1_5,
-    TIP_RATING_1_10,
-    TIP_BOOLEAN,
-    TIP_DROPDOWN,
+KOMPONENTE = (
+    KOMP_SINGLE_CHOICE,
+    KOMP_MULTI_CHOICE,
+    KOMP_DROPDOWN,
+    KOMP_TEXT,
+    KOMP_BOOLEAN,
+    KOMP_SCALE,
 )
-
-# Pitanja koja imaju ponudjene opcije.
-TIPOVI_SA_OPCIJAMA = (TIP_SINGLE_CHOICE, TIP_MULTI_CHOICE, TIP_DROPDOWN)
-# Pitanja koja NE smeju imati opcije.
-TIPOVI_BEZ_OPCIJA = (TIP_TEXT, TIP_BOOLEAN, TIP_RATING_1_5, TIP_RATING_1_10)
-# Tipovi kod kojih se bira tacno jedna opcija.
-TIPOVI_JEDNA_OPCIJA = (TIP_SINGLE_CHOICE, TIP_DROPDOWN)
-
-RATING_RASPON = {TIP_RATING_1_5: (1, 5), TIP_RATING_1_10: (1, 10)}
+KOMPONENTE_SA_OPCIJAMA = (KOMP_SINGLE_CHOICE, KOMP_MULTI_CHOICE, KOMP_DROPDOWN)
+KOMPONENTE_JEDNA_OPCIJA = (KOMP_SINGLE_CHOICE, KOMP_DROPDOWN)
 
 # --- Tipovi cilja ---
 CILJ_SVI = "SVI"
@@ -103,6 +97,25 @@ class AnketaTip(Base):
     sifra: Mapped[str] = mapped_column("SIFRA", VARCHAR(50), primary_key=True)
     naziv: Mapped[str] = mapped_column("NAZIV", NVARCHAR2(200))
     aktivan: Mapped[str] = mapped_column("AKTIVAN", CHAR(1), default="D")
+    datum_kreiranja: Mapped[datetime.datetime | None] = mapped_column(
+        "DATUM_KREIRANJA", TIMESTAMP(timezone=False), nullable=True
+    )
+    datum_izmene: Mapped[datetime.datetime | None] = mapped_column(
+        "DATUM_IZMENE", TIMESTAMP(timezone=False), nullable=True
+    )
+
+
+class AnketaTipPitanja(Base):
+    __tablename__ = "PULS_ANKETA_TIPOVI_PITANJA"
+
+    sifra: Mapped[str] = mapped_column("SIFRA", VARCHAR(20), primary_key=True)
+    naziv: Mapped[str] = mapped_column("NAZIV", NVARCHAR2(200))
+    komponenta: Mapped[str] = mapped_column("KOMPONENTA", VARCHAR(20))
+    # Popunjeni samo za KOMPONENTA='SCALE' (ukljucivi raspon ocene).
+    min_vrednost: Mapped[int | None] = mapped_column("MIN_VREDNOST", Numeric(10, 0), nullable=True)
+    max_vrednost: Mapped[int | None] = mapped_column("MAX_VREDNOST", Numeric(10, 0), nullable=True)
+    aktivan: Mapped[str] = mapped_column("AKTIVAN", CHAR(1), default="D")
+    redosled: Mapped[int] = mapped_column("REDOSLED", Numeric(10, 0), default=0)
     datum_kreiranja: Mapped[datetime.datetime | None] = mapped_column(
         "DATUM_KREIRANJA", TIMESTAMP(timezone=False), nullable=True
     )

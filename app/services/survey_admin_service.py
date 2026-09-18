@@ -22,8 +22,6 @@ from app.models.anketa import (
     CILJ_SVI,
     OPERATORI,
     TIPOVI_CILJA,
-    TIPOVI_PITANJA,
-    TIPOVI_SA_OPCIJAMA,
     Anketa,
     AnketaTip,
     is_valid_survey_transition,
@@ -42,6 +40,7 @@ from app.repositories.onboarding_automation_repository import OnboardingAutomati
 from app.repositories.survey_repository import SurveyRepository
 from app.repositories.survey_targeting_repository import SurveyTargetingRepository
 from app.services.audit_service import AuditAction, AuditService
+from app.services.question_types import get_question_type
 from app.services.survey_payload_validation import validate_admin_survey_payload
 from app.services.survey_validation import validate_structure
 from app.services.system_notification_service import SystemNotificationService
@@ -214,7 +213,7 @@ class SurveyAdminService:
                 AnketaSekcija(anketa_id=anketa_id, naziv=s.naziv, redosled=s.redosled, datum_kreiranja=now)
             )
             for q in s.pitanja:
-                if q.tip not in TIPOVI_PITANJA:
+                if get_question_type(q.tip) is None:
                     raise ValidationBusinessError("Nepoznat tip pitanja.")
                 pitanje = self.repo.add_question(
                     AnketaPitanje(
@@ -248,7 +247,7 @@ class SurveyAdminService:
                 raise ValidationBusinessError("Uslov referencira nepoznato kontrolno pitanje.")
             control = qobj_by_id[control_qid]
             values = list(uslov.vrednosti)
-            if control.tip_pitanja in TIPOVI_SA_OPCIJAMA:
+            if get_question_type(control.tip_pitanja).ima_opcije:
                 resolved = []
                 for v in values:
                     oid = optkey_to_oid.get(v)
