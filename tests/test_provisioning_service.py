@@ -161,3 +161,82 @@ def test_one_shot_no_double_counting_mixed():
     assert result.provisioned == 2
     assert result.skipped_no_phone == 2  # each skipped user counted once
     assert result.total_candidates == 4
+
+
+# --- SMS poruka sa linkom za preuzimanje (DOWNLOAD_URL iz PULS_KONFIGURACIJA) ------
+
+from app.services.provisioning_service import (  # noqa: E402
+    SMS_MAX_LENGTH,
+    build_initial_password_sms,
+)
+
+URL = "https://puls.gomex.rs/apk/GomexPuls-1.0.apk"
+LOZINKA = "Ab3dEf7hJk9m"  # generate_temporary_password() uvek daje 12 karaktera
+
+
+class FakeConfig:
+    def __init__(self, url):
+        self.url = url
+
+    def get_str(self, kljuc, default):
+        return self.url if kljuc == "DOWNLOAD_URL" and self.url is not None else default
+
+
+def test_sms_full_message_with_link_and_reminder():
+    msg = build_initial_password_sms(LOZINKA, URL)
+    assert msg == (
+        f"Vasa privremena lozinka za PULS je: {LOZINKA}\n"
+        f"Preuzmite aplikaciju: {URL}\n"
+        "Promenite lozinku pri prijavi."
+    )
+    assert len(msg) == 145 <= SMS_MAX_LENGTH
+
+
+def test_sms_without_url_is_password_only():
+    assert build_initial_password_sms(LOZINKA, None) == f"Vasa privremena lozinka za PULS je: {LOZINKA}"
+
+
+def test_sms_drops_reminder_when_link_is_long():
+    long_url = "https://puls.gomex.rs/apk/" + "x" * 30 + ".apk"  # 60 znakova
+    msg = build_initial_password_sms(LOZINKA, long_url)
+    assert msg.endswith(long_url) and "Promenite" not in msg
+    assert len(msg) <= SMS_MAX_LENGTH
+
+
+def test_sms_drops_link_when_even_that_is_too_long():
+    huge_url = "https://puls.gomex.rs/" + "y" * 120
+    assert build_initial_password_sms(LOZINKA, huge_url) == f"Vasa privremena lozinka za PULS je: {LOZINKA}"
+
+
+def test_sms_never_exceeds_limit_for_any_url_length():
+    for n in range(0, 200):
+        url = "https://p.rs/" + "z" * n
+        assert len(build_initial_password_sms(LOZINKA, url)) <= SMS_MAX_LENGTH
+
+
+def test_provisioning_sends_link_from_configuration():
+    korisnik = make_korisnik(lozinka_hash=None, broj_telefona="060123456")
+    repo = FakeKorisnikRepository([korisnik])
+    sms = FakeSmsProvider()
+    service = ProvisioningService(repo, sms, FakeAuditService(), configuration_service=FakeConfig(URL))
+
+    service.provision_pending(FakeDb(), batch_size=100)
+
+    _, message = sms.sent[0]
+    assert f"Preuzmite aplikaciju: {URL}" in message
+    assert message.endswith("Promenite lozinku pri prijavi.")
+    assert len(message) <= SMS_MAX_LENGTH
+    assert "Vasa privremena lozinka za PULS je: " in message
+    assert "lozinka" not in message.split("je: ")[1].split("\n")[0].lower()  # stvarna lozinka, ne placeholder
+
+
+def test_provisioning_ignores_invalid_or_missing_download_url():
+    for cfg in (FakeConfig(None), FakeConfig(""), FakeConfig("http://nije-https.example"), None):
+        korisnik = make_korisnik(lozinka_hash=None, broj_telefona="060123456")
+        sms = FakeSmsProvider()
+        service = ProvisioningService(
+            FakeKorisnikRepository([korisnik]), sms, FakeAuditService(), configuration_service=cfg
+        )
+        service.provision_pending(FakeDb(), batch_size=100)
+        _, message = sms.sent[0]
+        assert message.startswith("Vasa privremena lozinka za PULS je: ") and "\n" not in message
