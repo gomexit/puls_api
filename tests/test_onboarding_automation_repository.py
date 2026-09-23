@@ -131,3 +131,24 @@ def test_get_and_add_use_session_get_not_execute():
     repo, db = _repo()
     assert repo.get(1) is None
     assert db.compiled == []
+
+
+def test_find_qualified_candidates_accepts_oracle_decimal_columns():
+    # Oracle NUMBER kolone stizu kao Decimal; timedelta(days=Decimal) je rusio worker.
+    from decimal import Decimal
+
+    db = _CompileCapturingDb()
+    repo = OnboardingAutomationRepository(db)
+    pravilo = AnketaAutomatika(
+        id=1, anketa_id=10, dani_od_zaposlenja=Decimal("30"), rok_dana=Decimal("7"),
+        datum_primene_od=datetime.date(2026, 1, 1), aktivna="D",
+    )
+    assert repo.find_qualified_candidates(pravilo, NOW) == []
+
+
+def test_automatika_day_columns_are_integer_typed():
+    from sqlalchemy import Integer
+
+    cols = AnketaAutomatika.__table__.c
+    assert isinstance(cols["DANI_OD_ZAPOSLENJA"].type, Integer)
+    assert isinstance(cols["ROK_DANA"].type, Integer)

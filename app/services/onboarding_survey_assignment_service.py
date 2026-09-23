@@ -77,5 +77,5 @@ class OnboardingSurveyAssignmentService:
 
     @staticmethod
     def _add_days(datum: datetime.date, dani: int) -> datetime.datetime:
-        rezultat = datum + datetime.timedelta(days=dani)
+        rezultat = datum + datetime.timedelta(days=int(dani))
         return datetime.datetime.combine(rezultat, datetime.time.min)

@@ -62,8 +62,8 @@ class OnboardingAutomationRepository:
         koje JOS NE POSTOJI PULS_ANKETA_UCESCA red za ovu anketu (korelisani NOT EXISTS
         umesto N+1 poziva existing_participation_exists po kandidatu)."""
         today = now.date()
-        milestone_offset = datetime.timedelta(days=pravilo.dani_od_zaposlenja)
-        window_len = datetime.timedelta(days=pravilo.rok_dana)
+        milestone_offset = datetime.timedelta(days=int(pravilo.dani_od_zaposlenja))
+        window_len = datetime.timedelta(days=int(pravilo.rok_dana))
         already_participates = (
             select(AnketaUcesce.id)
             .where(

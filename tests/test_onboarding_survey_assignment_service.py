@@ -82,8 +82,8 @@ class FakeAutomationRepo:
                 continue
             if u.datum_zaposlenja is None or u.datum_zaposlenja < pravilo.datum_primene_od:
                 continue
-            dostupnost = u.datum_zaposlenja + datetime.timedelta(days=pravilo.dani_od_zaposlenja)
-            istek = dostupnost + datetime.timedelta(days=pravilo.rok_dana)
+            dostupnost = u.datum_zaposlenja + datetime.timedelta(days=int(pravilo.dani_od_zaposlenja))
+            istek = dostupnost + datetime.timedelta(days=int(pravilo.rok_dana))
             if dostupnost <= today < istek:
                 out.append(u)
         return out
@@ -379,3 +379,16 @@ def test_missing_survey_is_skipped_without_error():
 
     result = service.assign_due_surveys(NOW)
     assert result["assigned"] == 0
+
+
+def test_assignment_accepts_oracle_decimal_day_values():
+    from decimal import Decimal
+
+    service, automation, survey, event = _service()
+    survey.seed_survey(make_anketa())
+    automation.seed_rule(make_pravilo(dani_od_zaposlenja=Decimal("7"), rok_dana=Decimal("7")))
+    automation.seed_user(make_korisnik(datum_zaposlenja=(NOW - datetime.timedelta(days=7)).date()))
+
+    assert service.assign_due_surveys(NOW)["assigned"] == 1
+    u = survey.ucesca[0]
+    assert u.datum_isteka - u.datum_dostupnosti == datetime.timedelta(days=7)

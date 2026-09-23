@@ -1,6 +1,6 @@
 import datetime
 
-from sqlalchemy import CHAR, DATE, TIMESTAMP, VARCHAR, Numeric
+from sqlalchemy import CHAR, DATE, TIMESTAMP, VARCHAR, Integer, Numeric
 from sqlalchemy.dialects.oracle import NCLOB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -65,8 +65,8 @@ class AnketaAutomatika(Base):
 
     id: Mapped[int] = mapped_column("ID", Numeric(19, 0), primary_key=True)
     anketa_id: Mapped[int] = mapped_column("ANKETA_ID", Numeric(19, 0))
-    dani_od_zaposlenja: Mapped[int] = mapped_column("DANI_OD_ZAPOSLENJA", Numeric(3, 0))
-    rok_dana: Mapped[int] = mapped_column("ROK_DANA", Numeric(3, 0), default=7)
+    dani_od_zaposlenja: Mapped[int] = mapped_column("DANI_OD_ZAPOSLENJA", Integer)
+    rok_dana: Mapped[int] = mapped_column("ROK_DANA", Integer, default=7)
     datum_primene_od: Mapped[datetime.date] = mapped_column("DATUM_PRIMENE_OD", DATE)
     aktivna: Mapped[str] = mapped_column("AKTIVNA", CHAR(1), default="N")
     datum_kreiranja: Mapped[datetime.datetime | None] = mapped_column(
