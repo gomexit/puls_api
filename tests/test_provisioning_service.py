@@ -174,14 +174,6 @@ URL = "https://puls.gomex.rs/apk/GomexPuls-1.0.apk"
 LOZINKA = "Ab3dEf7hJk9m"  # generate_temporary_password() uvek daje 12 karaktera
 
 
-class FakeConfig:
-    def __init__(self, url):
-        self.url = url
-
-    def get_str(self, kljuc, default):
-        return self.url if kljuc == "DOWNLOAD_URL" and self.url is not None else default
-
-
 def test_sms_full_message_with_link_and_reminder():
     msg = build_initial_password_sms(LOZINKA, URL)
     assert msg == (
@@ -214,29 +206,16 @@ def test_sms_never_exceeds_limit_for_any_url_length():
         assert len(build_initial_password_sms(LOZINKA, url)) <= SMS_MAX_LENGTH
 
 
-def test_provisioning_sends_link_from_configuration():
+def test_provisioning_sends_download_page_link():
     korisnik = make_korisnik(lozinka_hash=None, broj_telefona="060123456")
-    repo = FakeKorisnikRepository([korisnik])
-    sms = FakeSmsProvider()
-    service = ProvisioningService(repo, sms, FakeAuditService(), configuration_service=FakeConfig(URL))
+    service, _, sms, _ = build_provisioning_service([korisnik])
 
     service.provision_pending(FakeDb(), batch_size=100)
 
     _, message = sms.sent[0]
-    assert f"Preuzmite aplikaciju: {URL}" in message
-    assert message.endswith("Promenite lozinku pri prijavi.")
-    assert len(message) <= SMS_MAX_LENGTH
-    assert "Vasa privremena lozinka za PULS je: " in message
-    assert "lozinka" not in message.split("je: ")[1].split("\n")[0].lower()  # stvarna lozinka, ne placeholder
-
-
-def test_provisioning_ignores_invalid_or_missing_download_url():
-    for cfg in (FakeConfig(None), FakeConfig(""), FakeConfig("http://nije-https.example"), None):
-        korisnik = make_korisnik(lozinka_hash=None, broj_telefona="060123456")
-        sms = FakeSmsProvider()
-        service = ProvisioningService(
-            FakeKorisnikRepository([korisnik]), sms, FakeAuditService(), configuration_service=cfg
-        )
-        service.provision_pending(FakeDb(), batch_size=100)
-        _, message = sms.sent[0]
-        assert message.startswith("Vasa privremena lozinka za PULS je: ") and "\n" not in message
+    prvi, link, promena = message.split("\n")
+    assert prvi.startswith("Vasa privremena lozinka za PULS je: ")
+    assert link == "Preuzmite aplikaciju: https://puls.gomex.rs/apk/index.html"
+    assert promena == "Promenite lozinku pri prijavi."
+    assert ".apk" not in message.lower()  # operateri blokiraju direktne .apk linkove
+    assert len(message) == 138 <= SMS_MAX_LENGTH

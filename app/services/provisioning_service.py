@@ -3,17 +3,12 @@ import logging
 
 from sqlalchemy.orm import Session
 
-from app.core.configuration_definitions import validate_https_url
-from app.core.exceptions import ValidationBusinessError
 from app.core.phone import is_valid_local_mobile_phone
 from app.core.security import generate_temporary_password, hash_password
 from app.models.korisnik import Korisnik
 from app.repositories.korisnik_repository import KorisnikRepository
 from app.services.audit_service import AuditAction, AuditService
-from app.services.configuration_service import ConfigurationService
 from app.services.sms_service import SmsProvider
-
-DOWNLOAD_URL_KEY = "DOWNLOAD_URL"
 
 logger = logging.getLogger("puls.provisioning")
 
@@ -22,6 +17,9 @@ SMS_MAX_LENGTH = 149
 SMS_LOZINKA = "Vasa privremena lozinka za PULS je: {lozinka}"
 SMS_LINK = "Preuzmite aplikaciju: {url}"
 SMS_PROMENA = "Promenite lozinku pri prijavi."
+# Stranica koja pokrece preuzimanje. SMS ne sme da sadrzi direktan link ka .apk
+# fajlu - operateri takve poruke tiho blokiraju.
+SMS_APP_LINK = "https://puls.gomex.rs/apk/index.html"
 
 
 def build_initial_password_sms(lozinka: str, download_url: str | None) -> str:
@@ -66,25 +64,10 @@ class ProvisioningService:
         korisnik_repository: KorisnikRepository,
         sms_provider: SmsProvider,
         audit_service: AuditService,
-        configuration_service: ConfigurationService | None = None,
     ):
         self.korisnik_repository = korisnik_repository
         self.sms_provider = sms_provider
         self.audit_service = audit_service
-        self.config = configuration_service
-
-    def _safe_download_url(self) -> str | None:
-        # Isti kljuc kao /app/version i obavestenje o novoj verziji - jedna izmena u
-        # PULS_KONFIGURACIJA menja link svuda.
-        if self.config is None:
-            return None
-        raw = self.config.get_str(DOWNLOAD_URL_KEY, "")
-        if not raw or not raw.strip():
-            return None
-        try:
-            return validate_https_url(raw, DOWNLOAD_URL_KEY)
-        except ValidationBusinessError:
-            return None
 
     def provision_pending(self, db: Session, batch_size: int = 100) -> ProvisioningResult:
         """Provision one batch of candidates. Commits per user."""
@@ -126,7 +109,7 @@ class ProvisioningService:
             return
 
         temporary_password = generate_temporary_password()
-        message = build_initial_password_sms(temporary_password, self._safe_download_url())
+        message = build_initial_password_sms(temporary_password, SMS_APP_LINK)
         if not self.sms_provider.send_sms(phone, message):
             result.sms_errors += 1
             self.audit_service.log(
