@@ -13,26 +13,24 @@ from app.services.sms_service import SmsProvider
 logger = logging.getLogger("puls.provisioning")
 
 # Ogranicenje SMS gateway-a; poruka je namerno bez dijakritike (GSM-7, jedan SMS).
+# Poruka mora biti u JEDNOM redu - gateway ne isporucuje poruke sa prelomom reda.
 SMS_MAX_LENGTH = 149
-SMS_LOZINKA = "Vasa privremena lozinka za PULS je: {lozinka}"
-SMS_LINK = "Preuzmite aplikaciju: {url}"
-SMS_PROMENA = "Promenite lozinku pri prijavi."
+SMS_SAMO_LOZINKA = "Vasa privremena lozinka za PULS je: {lozinka}"
+# Lozinka je na kraju: posle nje nema teksta ni interpunkcije koja bi se zamenila
+# za deo lozinke, a iza linka je samo razmak da ga telefon ispravno prepozna.
+SMS_SA_LINKOM = "Preuzmite aplikaciju PULS: {url} Vasa privremena lozinka: {lozinka}"
 # Stranica koja pokrece preuzimanje. SMS ne sme da sadrzi direktan link ka .apk
 # fajlu - operateri takve poruke tiho blokiraju.
 SMS_APP_LINK = "https://puls.gomex.rs/apk/index.html"
 
 
 def build_initial_password_sms(lozinka: str, download_url: str | None) -> str:
-    """Puna poruka ako staje u SMS_MAX_LENGTH; inace redom ispusta napomenu o
-    promeni lozinke, pa link - lozinka se uvek salje."""
-    prvi = SMS_LOZINKA.format(lozinka=lozinka)
-    if not download_url:
-        return prvi
-    link = SMS_LINK.format(url=download_url)
-    for poruka in ("\n".join((prvi, link, SMS_PROMENA)), "\n".join((prvi, link))):
+    """Poruka sa linkom ako staje u SMS_MAX_LENGTH; inace samo lozinka."""
+    if download_url:
+        poruka = SMS_SA_LINKOM.format(url=download_url, lozinka=lozinka)
         if len(poruka) <= SMS_MAX_LENGTH:
             return poruka
-    return prvi
+    return SMS_SAMO_LOZINKA.format(lozinka=lozinka)
 
 
 class ProvisioningResult:

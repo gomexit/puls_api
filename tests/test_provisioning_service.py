@@ -170,40 +170,33 @@ from app.services.provisioning_service import (  # noqa: E402
     build_initial_password_sms,
 )
 
-URL = "https://puls.gomex.rs/apk/GomexPuls-1.0.apk"
+URL = "https://puls.gomex.rs/apk/index.html"
 LOZINKA = "Ab3dEf7hJk9m"  # generate_temporary_password() uvek daje 12 karaktera
 
 
-def test_sms_full_message_with_link_and_reminder():
+def test_sms_with_link_is_single_line_link_first_password_last():
     msg = build_initial_password_sms(LOZINKA, URL)
-    assert msg == (
-        f"Vasa privremena lozinka za PULS je: {LOZINKA}\n"
-        f"Preuzmite aplikaciju: {URL}\n"
-        "Promenite lozinku pri prijavi."
-    )
-    assert len(msg) == 145 <= SMS_MAX_LENGTH
+    assert msg == f"Preuzmite aplikaciju PULS: {URL} Vasa privremena lozinka: {LOZINKA}"
+    assert "\n" not in msg and "\r" not in msg  # gateway ne isporucuje prelom reda
+    assert msg.endswith(LOZINKA)  # nista iza lozinke
+    assert len(msg) == 101 <= SMS_MAX_LENGTH
 
 
 def test_sms_without_url_is_password_only():
     assert build_initial_password_sms(LOZINKA, None) == f"Vasa privremena lozinka za PULS je: {LOZINKA}"
 
 
-def test_sms_drops_reminder_when_link_is_long():
-    long_url = "https://puls.gomex.rs/apk/" + "x" * 30 + ".apk"  # 60 znakova
-    msg = build_initial_password_sms(LOZINKA, long_url)
-    assert msg.endswith(long_url) and "Promenite" not in msg
-    assert len(msg) <= SMS_MAX_LENGTH
-
-
-def test_sms_drops_link_when_even_that_is_too_long():
+def test_sms_drops_link_when_too_long():
     huge_url = "https://puls.gomex.rs/" + "y" * 120
     assert build_initial_password_sms(LOZINKA, huge_url) == f"Vasa privremena lozinka za PULS je: {LOZINKA}"
 
 
-def test_sms_never_exceeds_limit_for_any_url_length():
+def test_sms_never_exceeds_limit_and_never_has_newline():
     for n in range(0, 200):
-        url = "https://p.rs/" + "z" * n
-        assert len(build_initial_password_sms(LOZINKA, url)) <= SMS_MAX_LENGTH
+        msg = build_initial_password_sms(LOZINKA, "https://p.rs/" + "z" * n)
+        assert len(msg) <= SMS_MAX_LENGTH
+        assert "\n" not in msg
+        assert msg.endswith(LOZINKA)
 
 
 def test_provisioning_sends_download_page_link():
@@ -213,9 +206,7 @@ def test_provisioning_sends_download_page_link():
     service.provision_pending(FakeDb(), batch_size=100)
 
     _, message = sms.sent[0]
-    prvi, link, promena = message.split("\n")
-    assert prvi.startswith("Vasa privremena lozinka za PULS je: ")
-    assert link == "Preuzmite aplikaciju: https://puls.gomex.rs/apk/index.html"
-    assert promena == "Promenite lozinku pri prijavi."
+    assert message.startswith(f"Preuzmite aplikaciju PULS: {URL} Vasa privremena lozinka: ")
+    assert "\n" not in message
     assert ".apk" not in message.lower()  # operateri blokiraju direktne .apk linkove
-    assert len(message) == 138 <= SMS_MAX_LENGTH
+    assert len(message) == 101 <= SMS_MAX_LENGTH
