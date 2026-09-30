@@ -369,3 +369,72 @@ def test_lock_rolls_back_on_audit_failure():
     assert db.rolled_back == 1
     # Iako je izuzetak nastao POSLE mutacije objekta u memoriji, transakcija nije
     # commitovana - FakeDb ne vraca objekat, ali rollback je pozvan umesto commit-a.
+
+
+# ============================================================ org. jedinica
+def _org_service():
+    k1 = make_korisnik(id=1, platni_broj="1")
+    k2 = make_korisnik(id=2, platni_broj="2")
+    k3 = make_korisnik(id=3, platni_broj="3")
+    k4 = make_korisnik(id=4, platni_broj="4")  # bez rasporeda
+    rasporedi = {
+        1: [make_raspored(1, orgjed_sifra="101", radno_mesto_sifra="7", primarni="D")],
+        # primarna je 205; 101 je sporedna -> NE sme upasti u filter 101
+        2: [
+            make_raspored(2, orgjed_sifra="101", primarni="N"),
+            make_raspored(2, orgjed_sifra="205", primarni="D"),
+        ],
+        3: [make_raspored(3, orgjed_sifra="310", primarni="N")],  # jedini aktivan -> primarni
+    }
+    repo = FakeAdminUsersRepository(
+        korisnici=[k1, k2, k3, k4],
+        rasporedi=rasporedi,
+        orgjed_nazivi={"101": "Centrala", "205": "Maloprodaja NS", "310": "Magacin"},
+        rm_nazivi={"7": "Referent"},
+    )
+    service = AdminUsersService(
+        db=FakeDb(),
+        sms_provider=FakeSmsProvider(),
+        repository=repo,
+        session_repository=FakeSessionRepository(),
+        push_token_repository=FakePushTokenRepository(),
+        audit_service=FakeAuditService(),
+    )
+    return service
+
+
+def _ids(result):
+    return [u["id"] for u in result["items"]]
+
+
+def test_list_returns_orgjed_and_radno_mesto_names():
+    result = _org_service().list_users(1, 20, None, None, None, None, None)
+    by_id = {u["id"]: u for u in result["items"]}
+    assert by_id[1]["orgjed_sifra"] == "101" and by_id[1]["orgjed_naziv"] == "Centrala"
+    assert by_id[1]["radno_mesto_naziv"] == "Referent"
+    assert by_id[2]["orgjed_sifra"] == "205" and by_id[2]["orgjed_naziv"] == "Maloprodaja NS"
+    assert by_id[4]["orgjed_sifra"] is None and by_id[4]["orgjed_naziv"] is None
+
+
+def test_orgjed_filter_uses_primary_unit_only():
+    result = _org_service().list_users(1, 20, None, None, None, None, None, orgjed=["101"])
+    assert _ids(result) == [1]  # korisnik 2 ima 101 samo kao sporednu jedinicu
+    assert result["total"] == 1
+
+
+def test_orgjed_filter_multiple_units():
+    result = _org_service().list_users(1, 20, None, None, None, None, None, orgjed=["101", "310"])
+    assert _ids(result) == [1, 3]
+
+
+def test_orgjed_filter_without_match_is_empty():
+    result = _org_service().list_users(1, 20, None, None, None, None, None, orgjed=["999"])
+    assert result["items"] == [] and result["total"] == 0 and result["has_more"] is False
+
+
+def test_list_orgjed_returns_units_with_names_sorted():
+    assert _org_service().list_orgjed() == [
+        {"sifra": "101", "naziv": "Centrala"},
+        {"sifra": "310", "naziv": "Magacin"},
+        {"sifra": "205", "naziv": "Maloprodaja NS"},
+    ]

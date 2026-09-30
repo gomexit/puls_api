@@ -11,14 +11,19 @@ from app.schemas.admin_users import (
     AdminUserListResponse,
     AdminUserOut,
     AdminUserPasswordResetResponse,
+    OrgjedListResponse,
+    OrgjedOut,
 )
 from app.services.admin_users_service import AdminUsersService
 
 router = APIRouter(prefix="/admin/users", tags=["Admin Users"])
+orgjed_router = APIRouter(prefix="/admin/orgjed", tags=["Admin Users"])
 
 PAGE_SIZE_DEFAULT = 20
 PAGE_SIZE_MAX = 100
 SEARCH_MAX = 100
+ORGJED_FILTER_MAX = 50
+ORGJED_SIFRA_MAX = 50
 
 
 def get_admin_users_service(db: Session = Depends(get_db)) -> AdminUsersService:
@@ -37,6 +42,32 @@ def _normalize_search(value: str | None) -> str | None:
     return v
 
 
+def _normalize_orgjed(values: list[str] | None) -> list[str] | None:
+    """Trim + uklanjanje duplikata; prazna/predugacka sifra ili previse sifara -> 422."""
+    if not values:
+        return None
+    if len(values) > ORGJED_FILTER_MAX:
+        raise ValidationBusinessError(f"Najviše {ORGJED_FILTER_MAX} organizacionih jedinica u filteru.")
+    result: list[str] = []
+    for raw in values:
+        v = raw.strip()
+        if not v:
+            raise ValidationBusinessError("orgjed ne sme biti prazan.")
+        if len(v) > ORGJED_SIFRA_MAX:
+            raise ValidationBusinessError("orgjed je predugačak.")
+        if v not in result:
+            result.append(v)
+    return result
+
+
+@orgjed_router.get("", response_model=OrgjedListResponse)
+def list_orgjed(
+    _: Korisnik = Depends(require_portal_admin),
+    service: AdminUsersService = Depends(get_admin_users_service),
+) -> OrgjedListResponse:
+    return OrgjedListResponse(items=[OrgjedOut(**o) for o in service.list_orgjed()])
+
+
 @router.get("", response_model=AdminUserListResponse)
 def list_users(
     page: int = Query(default=1, ge=1),
@@ -46,12 +77,24 @@ def list_users(
     status_naloga: Literal["OMOGUCEN", "ONEMOGUCEN"] | None = Query(default=None),
     zakljucan: bool | None = Query(default=None),
     uloga: Literal["ADMIN", "HR", "ZAPOSLENI"] | None = Query(default=None),
+    orgjed: list[str] | None = Query(
+        default=None,
+        description="Šifra org. jedinice; ponoviti za više (?orgjed=101&orgjed=205). "
+        "Filtrira po primarnoj aktivnoj org. jedinici korisnika.",
+    ),
     _: Korisnik = Depends(require_portal_admin),
     service: AdminUsersService = Depends(get_admin_users_service),
 ) -> AdminUserListResponse:
     search = _normalize_search(search)
     result = service.list_users(
-        page, page_size, search, status_zaposlenja, status_naloga, zakljucan, uloga
+        page,
+        page_size,
+        search,
+        status_zaposlenja,
+        status_naloga,
+        zakljucan,
+        uloga,
+        orgjed=_normalize_orgjed(orgjed),
     )
     return AdminUserListResponse(
         items=[AdminUserOut(**u) for u in result["items"]],

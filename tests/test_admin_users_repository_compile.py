@@ -99,3 +99,47 @@ def test_empty_id_lists_short_circuit_without_query():
     assert repo.batch_active_role_codes([]) == {}
     assert repo.batch_primary_active_rasporedi([]) == {}
     assert db.compiled == []
+
+
+def _plain(sql: str) -> str:
+    return sql.replace('"', "")
+
+
+def test_list_users_orgjed_filter_compiles_with_primary_raspored():
+    repo, db = _repo()
+    rows, total = repo.list_users(None, None, None, None, None, 1, 20, orgjed=["101", "205"])
+    assert rows == [] and total == 0
+    count_sql, page_sql = _plain(db.compiled[-2]), _plain(db.compiled[-1])
+    for sql in (count_sql, page_sql):  # i total i stranica postuju filter
+        assert "PULS_KORISNIK_RASPOREDI" in sql
+        assert "ORGJED_SIFRA IN" in sql
+        # primarni raspored: COALESCE(MIN primarni, MIN bilo koji) - bez FETCH/ROWNUM u korelaciji
+        assert "COALESCE" in sql and "MIN(" in sql
+        assert "ROWNUM" not in sql
+    assert "FETCH" not in count_sql
+    assert page_sql.count("FETCH") == 1  # samo stranicenje
+
+
+def test_list_users_orgjed_filter_combines_with_other_filters():
+    repo, db = _repo()
+    repo.list_users("petar", "AKTIVAN", None, None, "ADMIN", 1, 20, orgjed=["101"])
+    sql = _plain(db.compiled[-1])
+    assert "EXISTS" in sql and "ORGJED_SIFRA IN" in sql
+
+
+def test_batch_primary_active_rasporedi_joins_iis_names():
+    repo, db = _repo()
+    assert repo.batch_primary_active_rasporedi([1, 2]) == {}
+    sql = _plain(db.compiled[-1])
+    assert "LEFT OUTER JOIN IIS.ORGJED" in sql
+    assert "LEFT OUTER JOIN IIS.RADNAMESTA" in sql
+    assert "TO_CHAR(IIS.RADNAMESTA.SIFRA)" in sql
+
+
+def test_list_orgjed_compiles_distinct_active_only():
+    repo, db = _repo()
+    assert repo.list_orgjed() == []
+    sql = _plain(db.compiled[-1])
+    assert "SELECT DISTINCT" in sql
+    assert "LEFT OUTER JOIN IIS.ORGJED" in sql
+    assert "AKTIVAN" in sql

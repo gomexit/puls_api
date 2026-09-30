@@ -184,3 +184,76 @@ def test_reset_password_sms_failure_returns_502(client, monkeypatch):
     resp = client.post("/api/v1/admin/users/2/reset-password", headers=_headers())
     assert resp.status_code == 502
     assert resp.json()["error"]["code"] == "SMS_DELIVERY_FAILED"
+
+
+# ============================================================ org. jedinica
+def _org_wired():
+    from tests.survey_results_fakes import make_raspored
+
+    korisnici = [_admin_user(), make_korisnik(id=2, platni_broj="2"), make_korisnik(id=3, platni_broj="3")]
+    rasporedi = {
+        2: [make_raspored(2, orgjed_sifra="101", primarni="D")],
+        3: [make_raspored(3, orgjed_sifra="205", primarni="D")],
+    }
+    repo = FakeAdminUsersRepository(
+        korisnici=korisnici, rasporedi=rasporedi, orgjed_nazivi={"101": "Centrala", "205": "Maloprodaja"}
+    )
+    return AdminUsersService(
+        db=FakeDb(),
+        sms_provider=FakeSmsProvider(),
+        repository=repo,
+        session_repository=FakeSessionRepository(),
+        push_token_repository=FakePushTokenRepository(),
+        audit_service=FakeAuditService(),
+    )
+
+
+def test_list_filters_by_repeated_orgjed_param(client, monkeypatch):
+    _authed(monkeypatch)
+    _use_service(_org_wired())
+    resp = client.get("/api/v1/admin/users", headers=_headers(), params=[("orgjed", "101"), ("orgjed", "205")])
+    assert resp.status_code == 200
+    items = resp.json()["items"]
+    assert [i["id"] for i in items] == [2, 3]
+    assert items[0]["orgjed_naziv"] == "Centrala"
+
+
+def test_list_single_orgjed_and_whitespace_trimmed(client, monkeypatch):
+    _authed(monkeypatch)
+    _use_service(_org_wired())
+    resp = client.get("/api/v1/admin/users", headers=_headers(), params={"orgjed": " 205 "})
+    assert resp.status_code == 200
+    assert [i["id"] for i in resp.json()["items"]] == [3]
+
+
+def test_blank_orgjed_filter_422(client, monkeypatch):
+    _authed(monkeypatch)
+    _use_service(_org_wired())
+    resp = client.get("/api/v1/admin/users", headers=_headers(), params={"orgjed": "  "})
+    assert resp.status_code == 422
+
+
+def test_too_many_orgjed_values_422(client, monkeypatch):
+    _authed(monkeypatch)
+    _use_service(_org_wired())
+    params = [("orgjed", str(i)) for i in range(51)]
+    assert client.get("/api/v1/admin/users", headers=_headers(), params=params).status_code == 422
+
+
+def test_orgjed_list_endpoint(client, monkeypatch):
+    _authed(monkeypatch)
+    _use_service(_org_wired())
+    resp = client.get("/api/v1/admin/orgjed", headers=_headers())
+    assert resp.status_code == 200
+    assert resp.json() == {
+        "items": [{"sifra": "101", "naziv": "Centrala"}, {"sifra": "205", "naziv": "Maloprodaja"}]
+    }
+
+
+def test_orgjed_list_requires_service_key_401(client):
+    assert client.get("/api/v1/admin/orgjed").status_code == 401
+
+
+def test_orgjed_list_hr_role_rejected_403(client, monkeypatch):
+    _use_portal(monkeypatch, FakePortalRepo([_admin_user()], {1: ["HR"]}))
+    assert client.get("/api/v1/admin/orgjed", headers=_headers()).status_code == 403

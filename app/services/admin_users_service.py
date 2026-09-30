@@ -68,9 +68,10 @@ class AdminUsersService:
         status_naloga: str | None,
         zakljucan: bool | None,
         uloga: str | None,
+        orgjed: list[str] | None = None,
     ) -> dict:
         items, total = self.repo.list_users(
-            search, status_zaposlenja, status_naloga, zakljucan, uloga, page, page_size
+            search, status_zaposlenja, status_naloga, zakljucan, uloga, page, page_size, orgjed=orgjed
         )
         views = self._to_out_batch(items)
         return {
@@ -110,7 +111,9 @@ class AdminUsersService:
                     "datum_poslednje_prijave": k.datum_poslednje_prijave,
                     "datum_sinhronizacije": k.datum_sinhronizacije,
                     "orgjed_sifra": raspored.orgjed_sifra if raspored else None,
+                    "orgjed_naziv": raspored.orgjed_naziv if raspored else None,
                     "radno_mesto_sifra": raspored.radno_mesto_sifra if raspored else None,
+                    "radno_mesto_naziv": raspored.radno_mesto_naziv if raspored else None,
                     "uloge": sorted(roles.get(k.id, [])),
                 }
             )
@@ -118,6 +121,9 @@ class AdminUsersService:
 
     def _to_out(self, korisnik: Korisnik) -> dict:
         return self._to_out_batch([korisnik])[0]
+
+    def list_orgjed(self) -> list[dict]:
+        return [{"sifra": sifra, "naziv": naziv} for sifra, naziv in self.repo.list_orgjed()]
 
     # --------------------------------------------------------------- mutacije
     def _load_target_or_raise(self, actor: Korisnik, user_id: int) -> Korisnik:

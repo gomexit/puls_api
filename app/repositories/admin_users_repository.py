@@ -1,10 +1,37 @@
 from sqlalchemy import case, exists, func, select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, aliased
 
+from app.models.iis_orgjed import IisOrgjed
+from app.models.iis_radno_mesto import IisRadnoMesto
 from app.models.korisnik import Korisnik
 from app.models.korisnik_raspored import KorisnikRaspored
 from app.models.korisnik_uloga import KorisnikUloga
 from app.models.uloga import Uloga
+from app.repositories.korisnik_repository import RasporedWithNames
+
+
+def _primary_raspored_id(raspored_alias):
+    """ID primarnog aktivnog rasporeda korisnika iz `raspored_alias` reda - isti prioritet
+    kao batch_primary_active_rasporedi (PRIMARNI='D' pa najmanji ID). COALESCE dve MIN
+    podupita umesto ORDER BY + FETCH FIRST: korelacija je samo jedan nivo duboka, pa je
+    bezbedna na Oracle-u."""
+    r_primarni = aliased(KorisnikRaspored)
+    r_bilo_koji = aliased(KorisnikRaspored)
+    min_primarni = (
+        select(func.min(r_primarni.id))
+        .where(
+            r_primarni.korisnik_id == raspored_alias.korisnik_id,
+            r_primarni.aktivan == "D",
+            r_primarni.primarni == "D",
+        )
+        .scalar_subquery()
+    )
+    min_bilo_koji = (
+        select(func.min(r_bilo_koji.id))
+        .where(r_bilo_koji.korisnik_id == raspored_alias.korisnik_id, r_bilo_koji.aktivan == "D")
+        .scalar_subquery()
+    )
+    return func.coalesce(min_primarni, min_bilo_koji)
 
 
 class AdminUsersRepository:
@@ -30,6 +57,7 @@ class AdminUsersRepository:
         uloga: str | None,
         page: int,
         page_size: int,
+        orgjed: list[str] | None = None,
     ) -> tuple[list[Korisnik], int]:
         stmt = select(Korisnik)
         if search is not None:
@@ -58,6 +86,18 @@ class AdminUsersRepository:
                     )
                 )
             )
+        if orgjed:
+            # Filtrira po PRIMARNOJ aktivnoj org. jedinici - istoj koja se prikazuje u listi.
+            r = aliased(KorisnikRaspored)
+            stmt = stmt.where(
+                Korisnik.id.in_(
+                    select(r.korisnik_id).where(
+                        r.aktivan == "D",
+                        r.orgjed_sifra.in_(orgjed),
+                        r.id == _primary_raspored_id(r),
+                    )
+                )
+            )
 
         total = int(self.db.execute(select(func.count()).select_from(stmt.subquery())).scalar_one())
         rows = self.db.execute(
@@ -79,19 +119,44 @@ class AdminUsersRepository:
             result.setdefault(int(kid), []).append(sifra)
         return result
 
-    def batch_primary_active_rasporedi(self, korisnik_ids: list[int]) -> dict[int, KorisnikRaspored]:
-        """Batch verzija KorisnikRepository.get_primary_active_raspored - jedan upit
-        za celu stranicu. CASE prioritet PRIMARNI='D' + ID kao stabilan tie-breaker
-        (primarni.desc() bi pogresno stavilo 'N' ispred 'D')."""
+    def batch_primary_active_rasporedi(self, korisnik_ids: list[int]) -> dict[int, RasporedWithNames]:
+        """Batch verzija KorisnikRepository.get_primary_active_raspored_with_names - jedan
+        upit za celu stranicu, sa nazivima iz IIS sifrarnika (LEFT JOIN, kao /auth/me).
+        CASE prioritet PRIMARNI='D' + ID kao stabilan tie-breaker (primarni.desc() bi
+        pogresno stavilo 'N' ispred 'D'). RADNO_MESTO_SIFRA je VARCHAR2 u PULS-u a NUMBER
+        u IIS-u - poredi se preko TO_CHAR nad IIS stranom (izbegava ORA-01722)."""
         if not korisnik_ids:
             return {}
         primarni_prioritet = case((KorisnikRaspored.primarni == "D", 0), else_=1)
         stmt = (
-            select(KorisnikRaspored)
+            select(
+                KorisnikRaspored.korisnik_id,
+                KorisnikRaspored.orgjed_sifra,
+                IisOrgjed.naziv,
+                KorisnikRaspored.radno_mesto_sifra,
+                IisRadnoMesto.naziv,
+            )
+            .outerjoin(IisOrgjed, IisOrgjed.sifra == KorisnikRaspored.orgjed_sifra)
+            .outerjoin(
+                IisRadnoMesto,
+                func.to_char(IisRadnoMesto.sifra) == KorisnikRaspored.radno_mesto_sifra,
+            )
             .where(KorisnikRaspored.korisnik_id.in_(korisnik_ids), KorisnikRaspored.aktivan == "D")
             .order_by(KorisnikRaspored.korisnik_id, primarni_prioritet, KorisnikRaspored.id)
         )
-        result: dict[int, KorisnikRaspored] = {}
-        for r in self.db.execute(stmt).scalars().all():
-            result.setdefault(r.korisnik_id, r)
+        result: dict[int, RasporedWithNames] = {}
+        for kid, orgjed, orgjed_naziv, rm, rm_naziv in self.db.execute(stmt).all():
+            result.setdefault(int(kid), RasporedWithNames(orgjed, orgjed_naziv, rm, rm_naziv))
         return result
+
+    def list_orgjed(self) -> list[tuple[str, str | None]]:
+        """Org. jedinice koje stvarno imaju korisnike (aktivan raspored), sa nazivom iz
+        IIS sifrarnika - za izbor u filteru admin liste, bez praznih jedinica."""
+        stmt = (
+            select(KorisnikRaspored.orgjed_sifra, IisOrgjed.naziv)
+            .outerjoin(IisOrgjed, IisOrgjed.sifra == KorisnikRaspored.orgjed_sifra)
+            .where(KorisnikRaspored.aktivan == "D")
+            .distinct()
+            .order_by(IisOrgjed.naziv, KorisnikRaspored.orgjed_sifra)
+        )
+        return [(sifra, naziv) for sifra, naziv in self.db.execute(stmt).all()]
