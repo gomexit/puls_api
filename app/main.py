@@ -18,6 +18,24 @@ settings = get_settings()
 #   periodic:  python -m app.scripts.provision_worker
 app = FastAPI(title=settings.app_name)
 
+
+class ForwardedPrefixMiddleware:
+    """Postavlja root_path iz X-Forwarded-Prefix (za /docs iza proxy-ja sa prefiksom)."""
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] in ("http", "websocket"):
+            for k, v in scope["headers"]:
+                if k == b"x-forwarded-prefix":
+                    scope["root_path"] = v.decode().rstrip("/")
+                    break
+        await self.app(scope, receive, send)
+
+
+app.add_middleware(ForwardedPrefixMiddleware)
+
 register_exception_handlers(app)
 app.include_router(api_router)
 
