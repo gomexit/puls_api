@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 from app.db.session import get_db
 from app.dependencies.auth import get_current_ready_user
 from app.models.korisnik import Korisnik
+from app.schemas.common import ErrorResponse
 from app.schemas.onboarding_document import (
     OnboardingDocumentListResponse,
     OnboardingDocumentOut,
@@ -12,6 +13,14 @@ from app.services.onboarding_document_service import DocumentContent, Onboarding
 from app.services.onboarding_pdf import content_disposition_inline
 
 router = APIRouter(prefix="/onboarding/documents", tags=["Onboarding Documents"])
+
+NOT_FOUND_RESPONSE = {
+    404: {
+        "model": ErrorResponse,
+        "description": "`ONBOARDING_DOCUMENT_NOT_FOUND` - dokument ne postoji ili nije PUBLISHED "
+        "(DRAFT i ARCHIVED se zaposlenom ne otkrivaju; odgovor je isti).",
+    }
+}
 
 PDF_RESPONSES = {
     200: {
@@ -41,7 +50,15 @@ def pdf_inline_response(doc: DocumentContent) -> Response:
     )
 
 
-@router.get("", response_model=OnboardingDocumentListResponse)
+@router.get(
+    "",
+    response_model=OnboardingDocumentListResponse,
+    summary="Lista objavljenih onboarding dokumenata",
+    description=(
+        "Vraca **samo dokumente u statusu PUBLISHED**, sortirane po `redosled`, pa `id`. "
+        "DRAFT (radna verzija) i ARCHIVED (povuceni) dokumenti se zaposlenima nikada ne prikazuju."
+    ),
+)
 def list_documents(
     korisnik: Korisnik = Depends(get_current_ready_user),
     service: OnboardingDocumentService = Depends(get_onboarding_document_service),
@@ -51,7 +68,13 @@ def list_documents(
     )
 
 
-@router.get("/{document_id}", response_model=OnboardingDocumentOut)
+@router.get(
+    "/{document_id}",
+    response_model=OnboardingDocumentOut,
+    summary="Detalj objavljenog dokumenta",
+    description="Metadata dokumenta u statusu PUBLISHED. Za DRAFT/ARCHIVED/nepostojeci: 404.",
+    responses={**NOT_FOUND_RESPONSE},
+)
 def get_document(
     document_id: int,
     korisnik: Korisnik = Depends(get_current_ready_user),
@@ -63,7 +86,13 @@ def get_document(
 @router.get(
     "/{document_id}/content",
     response_class=Response,
-    responses=PDF_RESPONSES,
+    summary="PDF sadrzaj objavljenog dokumenta",
+    description=(
+        "Binarni PDF (`application/pdf`, `Content-Disposition: inline`, `ETag` = SHA-256, "
+        "`Cache-Control: private, no-store`). Dostupan samo za status PUBLISHED; "
+        "za DRAFT/ARCHIVED/nepostojeci: 404."
+    ),
+    responses={**PDF_RESPONSES, **NOT_FOUND_RESPONSE},
 )
 def get_document_content(
     document_id: int,

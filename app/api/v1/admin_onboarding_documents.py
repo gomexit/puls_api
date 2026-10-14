@@ -12,7 +12,11 @@ from app.core.exceptions import ValidationBusinessError
 from app.db.session import get_db
 from app.dependencies.portal_auth import require_portal_admin_or_hr
 from app.models.korisnik import Korisnik
+from app.models.onboarding_dokument import ONB_DOKUMENT_STATUSI
+from app.schemas.common import ErrorResponse
 from app.schemas.onboarding_document import (
+    STATUS_DESCRIPTION,
+    STATUS_TRANSITIONS_MD,
     AdminOnboardingDocumentListResponse,
     AdminOnboardingDocumentOut,
     AdminOnboardingDocumentStatusRequest,
@@ -55,6 +59,11 @@ router = APIRouter(
     route_class=MultipartValidationRoute,
 )
 
+R_404 = {404: {"model": ErrorResponse, "description": "`ONBOARDING_DOCUMENT_NOT_FOUND` - dokument ne postoji."}}
+R_422 = {422: {"model": ErrorResponse, "description": "`VALIDATION_ERROR` ili `INVALID_PDF_DOCUMENT` - neispravni podaci ili PDF."}}
+R_413 = {413: {"model": ErrorResponse, "description": "`PDF_DOCUMENT_TOO_LARGE` - PDF je veci od `ONBOARDING_PDF_MAX_SIZE_MB`."}}
+R_409_ARCHIVED = {409: {"model": ErrorResponse, "description": "`ONBOARDING_DOCUMENT_ARCHIVED` - arhiviran dokument se ne menja."}}
+
 PAGE_SIZE_DEFAULT = 20
 PAGE_SIZE_MAX = 100
 
@@ -63,9 +72,24 @@ def get_onboarding_document_service(db: Session = Depends(get_db)) -> Onboarding
     return OnboardingDocumentService(db)
 
 
-@router.get("", response_model=AdminOnboardingDocumentListResponse)
+@router.get(
+    "",
+    response_model=AdminOnboardingDocumentListResponse,
+    summary="Lista onboarding dokumenata (svi statusi)",
+    description=(
+        "Admin/HR vidi dokumente u **svim** statusima (DRAFT, PUBLISHED, ARCHIVED). "
+        "Sortiranje: `redosled` pa `id`. Filter `status` je opcion; `search` trazi po nazivu.\n\n"
+        + STATUS_DESCRIPTION
+    ),
+)
 def list_documents(
-    status_filter: str | None = Query(default=None, alias="status"),
+    status_filter: str | None = Query(
+        default=None,
+        alias="status",
+        description="Filter po statusu: DRAFT, PUBLISHED ili ARCHIVED. Bez filtera vraca sve. "
+        "Nepoznata vrednost: 422 `INVALID_ONBOARDING_DOCUMENT_STATUS`.",
+        json_schema_extra={"enum": list(ONB_DOKUMENT_STATUSI)},
+    ),
     search: str | None = Query(default=None),
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=PAGE_SIZE_DEFAULT, ge=1, le=PAGE_SIZE_MAX),
@@ -81,7 +105,12 @@ def list_documents(
     )
 
 
-@router.get("/{document_id}", response_model=AdminOnboardingDocumentOut)
+@router.get(
+    "/{document_id}",
+    response_model=AdminOnboardingDocumentOut,
+    summary="Detalj dokumenta (bilo koji status)",
+    responses={**R_404},
+)
 def get_document(
     document_id: int,
     actor: Korisnik = Depends(require_portal_admin_or_hr),
@@ -94,6 +123,14 @@ def get_document(
     "",
     response_model=AdminOnboardingDocumentOut,
     status_code=status.HTTP_201_CREATED,
+    summary="Kreiranje dokumenta (uvek DRAFT)",
+    description=(
+        "Novi dokument uvek nastaje u statusu **DRAFT**, verzija 1, i zaposleni ga ne vide "
+        "dok se ne objavi (`PATCH .../status` -> `PUBLISHED`). Telo je `multipart/form-data`: "
+        "`naziv` (1-200), `opis` (opciono, do 4000), `redosled` (1-9999999999, default 1) i "
+        "`file` (PDF, do `ONBOARDING_PDF_MAX_SIZE_MB`). Akter se uzima iz OBO zaglavlja."
+    ),
+    responses={**R_422, **R_413},
 )
 def create_document(
     naziv: Annotated[
@@ -113,7 +150,17 @@ def create_document(
     return AdminOnboardingDocumentOut(**service.create(actor, naziv, opis, redosled, pdf))
 
 
-@router.put("/{document_id}", response_model=AdminOnboardingDocumentOut)
+@router.put(
+    "/{document_id}",
+    response_model=AdminOnboardingDocumentOut,
+    summary="Izmena naziva, opisa i redosleda",
+    description=(
+        "Menja samo metadata (naziv, opis, redosled). Dozvoljeno u **DRAFT** i **PUBLISHED** "
+        "statusu; za **ARCHIVED** vraca 409. Ne menja status ni verziju. "
+        "Identicna izmena je no-op (bez audita)."
+    ),
+    responses={**R_404, **R_409_ARCHIVED, **R_422},
+)
 def update_document(
     document_id: int,
     payload: AdminOnboardingDocumentUpdateRequest,
@@ -125,7 +172,27 @@ def update_document(
     )
 
 
-@router.put("/{document_id}/content", response_model=AdminOnboardingDocumentOut)
+@router.put(
+    "/{document_id}/content",
+    response_model=AdminOnboardingDocumentOut,
+    summary="Zamena PDF sadrzaja (samo DRAFT)",
+    description=(
+        "Menja PDF **samo dok je dokument u DRAFT-u**. Za PUBLISHED vraca 409 "
+        "`ONBOARDING_DOCUMENT_NOT_DRAFT` (prvo povuci iz objave: `PATCH .../status` -> `DRAFT`), "
+        "a za ARCHIVED 409 `ONBOARDING_DOCUMENT_ARCHIVED`. Svaka zamena povecava `verzija` za 1; "
+        "slanje potpuno istog PDF-a (isti SHA-256) je no-op: verzija ostaje ista i nema audita."
+    ),
+    responses={
+        **R_404,
+        **R_422,
+        **R_413,
+        409: {
+            "model": ErrorResponse,
+            "description": "`ONBOARDING_DOCUMENT_NOT_DRAFT` (PUBLISHED) ili "
+            "`ONBOARDING_DOCUMENT_ARCHIVED` (ARCHIVED).",
+        },
+    },
+)
 def replace_document_content(
     document_id: int,
     file: UploadFile = File(...),
@@ -136,7 +203,20 @@ def replace_document_content(
     return AdminOnboardingDocumentOut(**service.replace_content(actor, document_id, pdf))
 
 
-@router.patch("/{document_id}/status", response_model=AdminOnboardingDocumentOut)
+@router.patch(
+    "/{document_id}/status",
+    response_model=AdminOnboardingDocumentOut,
+    summary="Promena statusa (objava, povlacenje, arhiviranje)",
+    description=STATUS_DESCRIPTION + "\n\n" + STATUS_TRANSITIONS_MD,
+    responses={
+        **R_404,
+        **R_409_ARCHIVED,
+        422: {
+            "model": ErrorResponse,
+            "description": "`INVALID_ONBOARDING_DOCUMENT_STATUS` - nepoznat status.",
+        },
+    },
+)
 def change_document_status(
     document_id: int,
     payload: AdminOnboardingDocumentStatusRequest,
@@ -149,7 +229,12 @@ def change_document_status(
 @router.get(
     "/{document_id}/content",
     response_class=Response,
-    responses=PDF_RESPONSES,
+    summary="Pregled PDF-a (bilo koji status)",
+    description=(
+        "Vraca binarni PDF (`application/pdf`, inline). Admin/HR moze da pregleda PDF u "
+        "bilo kom statusu, ukljucujuci DRAFT i ARCHIVED."
+    ),
+    responses={**PDF_RESPONSES, **R_404},
 )
 def get_document_content(
     document_id: int,
