@@ -59,6 +59,10 @@ class Settings(BaseSettings):
     sys_notification_batch_size: int = Field(default=50, ge=1, le=1000)
     sys_notification_max_attempts: int = Field(default=5, ge=1, le=20)
 
+    # Modul ONBOARDING DOKUMENTI: najveca dozvoljena velicina PDF-a (u MB). PDF se cuva
+    # kao BLOB i servira iz memorije, pa je gornja granica namerno ogranicena.
+    onboarding_pdf_max_size_mb: int = Field(default=20, ge=1, le=100)
+
     @property
     def is_production(self) -> bool:
         return self.app_env.strip().lower() == PRODUCTION_ENV

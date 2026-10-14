@@ -277,6 +277,45 @@ class ConfigurationKeyNotAllowedError(PulsApiError):
     message = "Ovaj konfiguracioni ključ nije dozvoljen."
 
 
+# --- Modul ONBOARDING DOKUMENTI ---
+class OnboardingDocumentNotFoundError(PulsApiError):
+    # Generička poruka: isti odgovor za nepostojeći, DRAFT i ARCHIVED dokument kada ga
+    # traži zaposleni - ne otkriva postojanje neobjavljenog dokumenta.
+    code = "ONBOARDING_DOCUMENT_NOT_FOUND"
+    status_code = status.HTTP_404_NOT_FOUND
+    message = "Dokument nije pronađen ili više nije dostupan."
+
+
+class InvalidPdfDocumentError(PulsApiError):
+    code = "INVALID_PDF_DOCUMENT"
+    status_code = 422
+    message = "Fajl nije ispravan PDF dokument."
+
+
+class PdfDocumentTooLargeError(PulsApiError):
+    code = "PDF_DOCUMENT_TOO_LARGE"
+    status_code = status.HTTP_413_CONTENT_TOO_LARGE
+    message = "PDF dokument je veći od dozvoljene veličine."
+
+
+class InvalidOnboardingDocumentStatusError(PulsApiError):
+    code = "INVALID_ONBOARDING_DOCUMENT_STATUS"
+    status_code = 422
+    message = "Nepoznat status dokumenta."
+
+
+class OnboardingDocumentArchivedError(PulsApiError):
+    code = "ONBOARDING_DOCUMENT_ARCHIVED"
+    status_code = status.HTTP_409_CONFLICT
+    message = "Arhiviran dokument se više ne može menjati."
+
+
+class OnboardingDocumentNotDraftError(PulsApiError):
+    code = "ONBOARDING_DOCUMENT_NOT_DRAFT"
+    status_code = status.HTTP_409_CONFLICT
+    message = "PDF sadržaj može da se zameni samo dok je dokument u statusu DRAFT."
+
+
 def register_exception_handlers(app: FastAPI) -> None:
     @app.exception_handler(PulsApiError)
     async def handle_puls_api_error(request: Request, exc: PulsApiError) -> JSONResponse:

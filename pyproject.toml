@@ -17,6 +17,7 @@ dependencies = [
     "argon2-cffi>=23.1.0",
     "python-multipart>=0.0.12",
     "apscheduler>=3.10.4",
+    "pypdf>=6.0.0",
 ]
 
 [project.optional-dependencies]
