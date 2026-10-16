@@ -7,11 +7,23 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.dialects import oracle
 
-from app.api.v1 import admin_ideas, admin_notifications, admin_surveys, admin_users
+from app.api.v1 import (
+    admin_audit,
+    admin_ideas,
+    admin_notifications,
+    admin_survey_results,
+    admin_surveys,
+    admin_users,
+)
 from app.core.sorting import SortSpec
 from app.dependencies.portal_auth import require_portal_admin, require_portal_admin_or_hr
 from app.main import app
 from app.repositories import idea_repository, notification_repository
+from app.repositories.admin_audit_repository import (
+    AUDIT_DEFAULT_SORT,
+    AUDIT_SORT_COLUMNS,
+    AdminAuditRepository,
+)
 from app.repositories.admin_users_repository import (
     USERS_DEFAULT_SORT,
     USERS_SORT_COLUMNS,
@@ -25,6 +37,11 @@ from app.repositories.notification_repository import (
     ADMIN_SORT_FIELDS as NOTIF_SORT_FIELDS,
 )
 from app.repositories.notification_repository import NotificationRepository
+from app.repositories.survey_results_repository import (
+    RESPONSES_DEFAULT_SORT,
+    RESPONSES_SORT_COLUMNS,
+    SurveyResultsRepository,
+)
 from app.repositories.survey_repository import (
     SURVEY_DEFAULT_SORT,
     SURVEY_SORT_COLUMNS,
@@ -109,6 +126,26 @@ MODULES = {
         case={"status"},
     ),
 }
+
+
+MODULES["audit"] = dict(
+    repo=lambda db: AdminAuditRepository(db),
+    call=lambda repo, sort: repo.list_logs(None, None, None, None, None, None, None, 1, 20, sort=sort),
+    fields=list(AUDIT_SORT_COLUMNS),
+    default=AUDIT_DEFAULT_SORT,
+    text=set(),
+    lpad=set(),
+    case=set(),
+)
+MODULES["responses"] = dict(
+    repo=lambda db: SurveyResultsRepository(db),
+    call=lambda repo, sort: repo.list_final_submissions(1, None, None, None, None, None, 1, 20, sort=sort),
+    fields=list(RESPONSES_SORT_COLUMNS),
+    default=RESPONSES_DEFAULT_SORT,
+    text={"ime", "prezime"},
+    lpad={"platni_broj"},
+    case=set(),
+)
 
 
 def _compile(module: str, sort):
@@ -247,6 +284,27 @@ ENDPOINTS = {
 }
 
 
+ENDPOINTS["audit"] = dict(
+    url="/api/v1/admin/audit-logs",
+    service_dep=admin_audit.get_admin_audit_service,
+    auth=require_portal_admin_or_hr,
+    result={"items": [], "page": 1, "page_size": 20, "total": 0, "has_more": False},
+    fields=list(AUDIT_SORT_COLUMNS),
+    default=AUDIT_DEFAULT_SORT,
+    schema="AdminAuditLogListResponse",
+)
+ENDPOINTS["responses"] = dict(
+    url="/api/v1/admin/surveys/1/responses",
+    openapi_path="/api/v1/admin/surveys/{survey_id}/responses",
+    service_dep=admin_survey_results.get_survey_results_service,
+    auth=require_portal_admin_or_hr,
+    result={"survey_id": 1, "page": 1, "page_size": 20, "total": 0, "has_more": False, "items": []},
+    fields=list(RESPONSES_SORT_COLUMNS),
+    default=RESPONSES_DEFAULT_SORT,
+    schema="SurveyResponsesResponse",
+)
+
+
 @pytest.fixture
 def client():
     with TestClient(app) as c:
@@ -341,7 +399,7 @@ def test_blank_params_from_datatable_are_ignored(client, name):
 def test_openapi_documents_sort_enum_and_response_fields(name):
     cfg = ENDPOINTS[name]
     spec = app.openapi()
-    params = {p["name"]: p for p in spec["paths"][cfg["url"].replace("/api/v1", "/api/v1")]["get"]["parameters"]}
+    params = {p["name"]: p for p in spec["paths"][cfg.get("openapi_path", cfg["url"])]["get"]["parameters"]}
     assert params["sort_by"]["schema"]["enum"] == cfg["fields"]
     assert params["sort_dir"]["schema"]["enum"] == ["asc", "desc"]
     assert cfg["default"].by in params["sort_by"]["description"]
@@ -358,10 +416,27 @@ def test_existing_filters_and_paging_parameters_are_unchanged():
         "/api/v1/admin/surveys": {"status", "tip", "datum_od", "datum_do", "page", "page_size"},
         "/api/v1/admin/notifications": {"page", "page_size", "status", "category", "datum_od", "datum_do"},
         "/api/v1/admin/ideas": {"cycle_id", "status", "korisnik_id", "platni_broj", "page", "page_size"},
+        "/api/v1/admin/audit-logs": {"page", "page_size", "platni_broj", "sifra_akcije", "tip_entiteta",
+                                     "entitet_id", "izvor", "datum_od", "datum_do"},
+        "/api/v1/admin/surveys/{survey_id}/responses": {"page", "page_size", "platni_broj", "orgjed_sifra",
+                                                        "radno_mesto_sifra", "datum_od", "datum_do"},
     }
     for url, names in expected.items():
         got = {p["name"] for p in spec[url]["get"]["parameters"] if p["in"] == "query"}
         assert got == names | {"sort_by", "sort_dir"}, url
+
+
+def test_audit_log_has_exactly_the_four_agreed_sortable_columns():
+    # audit_log je velik i raste: samo kolone sa indeksom/malim brojem vrednosti
+    assert list(AUDIT_SORT_COLUMNS) == ["datum_kreiranja", "sifra_akcije", "tip_entiteta", "izvor"]
+    for blocked in ("id", "platni_broj", "korisnik_id", "entitet_id", "detalji", "ip_adresa"):
+        assert blocked not in AUDIT_SORT_COLUMNS
+
+
+def test_survey_responses_sortable_columns_and_defaults():
+    assert list(RESPONSES_SORT_COLUMNS) == ["datum_predaje", "platni_broj", "ime", "prezime"]
+    assert RESPONSES_DEFAULT_SORT == SortSpec("datum_predaje", "desc")
+    assert AUDIT_DEFAULT_SORT == SortSpec("datum_kreiranja", "desc")
 
 
 def test_idea_repository_module_exposes_the_whitelist():

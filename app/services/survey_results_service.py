@@ -12,6 +12,7 @@ import datetime
 
 from sqlalchemy.orm import Session
 
+from app.core.sorting import SortSpec
 from app.core.exceptions import (
     AnonymousSurveyResponsesNotAvailableError,
     SurveyNotFoundError,
@@ -190,6 +191,7 @@ class SurveyResultsService:
         radno_mesto_sifra: str | None,
         datum_od: datetime.datetime | None,
         datum_do: datetime.datetime | None,
+        sort: SortSpec | None = None,
     ) -> dict:
         anketa = self.survey_repo.get_survey(survey_id)
         if anketa is None:
@@ -198,7 +200,8 @@ class SurveyResultsService:
             raise AnonymousSurveyResponsesNotAvailableError()
 
         rows, total = self.results_repo.list_final_submissions(
-            survey_id, platni_broj, orgjed_sifra, radno_mesto_sifra, datum_od, datum_do, page, page_size
+            survey_id, platni_broj, orgjed_sifra, radno_mesto_sifra, datum_od, datum_do, page, page_size,
+            sort=sort,
         )
 
         predaja_ids = [p.id for p, _ in rows]

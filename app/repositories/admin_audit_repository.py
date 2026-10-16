@@ -10,6 +10,7 @@ import datetime
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from app.core.sorting import SortColumn, SortSpec, build_order_by
 from app.models.audit_log import AuditLog
 
 LIST_COLUMNS = (
@@ -22,6 +23,18 @@ LIST_COLUMNS = (
     AuditLog.izvor,
     AuditLog.datum_kreiranja,
 )
+
+
+# Audit log je velik (desetine hiljada redova, raste ~9000 dnevno), pa je sortabilno samo cetiri
+# kolone. `id` je tie-breaker. Ostale kolone (platni_broj, korisnik_id, entitet_id...) se filtriraju.
+AUDIT_SORT_COLUMNS: dict[str, SortColumn] = {
+    "datum_kreiranja": SortColumn(AuditLog.datum_kreiranja),
+    "sifra_akcije": SortColumn(AuditLog.sifra_akcije),
+    "tip_entiteta": SortColumn(AuditLog.tip_entiteta),
+    "izvor": SortColumn(AuditLog.izvor),
+}
+# Podrazumevani redosled (isti kao pre uvodjenja sortiranja): najnoviji zapis prvi.
+AUDIT_DEFAULT_SORT = SortSpec(by="datum_kreiranja", dir="desc")
 
 
 class AdminAuditRepository:
@@ -39,6 +52,7 @@ class AdminAuditRepository:
         datum_do: datetime.datetime | None,
         page: int,
         page_size: int,
+        sort: SortSpec | None = None,
     ) -> tuple[list[dict], int]:
         stmt = select(*LIST_COLUMNS)
         if platni_broj is not None:
@@ -58,7 +72,9 @@ class AdminAuditRepository:
 
         total = int(self.db.execute(select(func.count()).select_from(stmt.subquery())).scalar_one())
         rows = self.db.execute(
-            stmt.order_by(AuditLog.datum_kreiranja.desc(), AuditLog.id.desc())
+            stmt.order_by(
+                *build_order_by(sort or AUDIT_DEFAULT_SORT, AUDIT_SORT_COLUMNS, AuditLog.id)
+            )
             .offset((page - 1) * page_size)
             .limit(page_size)
         ).all()

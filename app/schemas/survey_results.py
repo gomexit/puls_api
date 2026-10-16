@@ -1,5 +1,7 @@
 import datetime
 
+from typing import Literal
+
 from pydantic import BaseModel, Field
 
 # ===========================================================================
@@ -112,3 +114,5 @@ class SurveyResponsesResponse(BaseModel):
     total: int
     has_more: bool
     items: list[ResponseItemOut]
+    sort_by: str = Field(description="Kolona po kojoj je lista stvarno sortirana.")
+    sort_dir: Literal["asc", "desc"] = Field(description="Smer stvarnog sortiranja.")

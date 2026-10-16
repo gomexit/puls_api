@@ -101,7 +101,8 @@ def test_list_response_shape(client, monkeypatch):
     resp = client.get("/api/v1/admin/audit-logs", headers=_headers())
     assert resp.status_code == 200
     body = resp.json()
-    assert set(body.keys()) == {"items", "page", "page_size", "total", "has_more"}
+    # postojeci kljucevi su nepromenjeni; sort_by/sort_dir su dodati (sortiranje po koloni)
+    assert set(body.keys()) == {"items", "page", "page_size", "total", "has_more", "sort_by", "sort_dir"}
     item = body["items"][0]
     assert set(item.keys()) == {
         "id", "korisnik_id", "platni_broj", "sifra_akcije", "tip_entiteta",

@@ -7,6 +7,7 @@ import datetime
 from sqlalchemy.orm import Session
 
 from app.core.exceptions import AuditLogNotFoundError
+from app.core.sorting import SortSpec
 from app.repositories.admin_audit_repository import AdminAuditRepository
 
 
@@ -26,9 +27,11 @@ class AdminAuditService:
         izvor: str | None,
         datum_od: datetime.datetime | None,
         datum_do: datetime.datetime | None,
+        sort: SortSpec | None = None,
     ) -> dict:
         items, total = self.repo.list_logs(
-            platni_broj, sifra_akcije, tip_entiteta, entitet_id, izvor, datum_od, datum_do, page, page_size
+            platni_broj, sifra_akcije, tip_entiteta, entitet_id, izvor, datum_od, datum_do, page, page_size,
+            sort=sort,
         )
         return {
             "items": items,

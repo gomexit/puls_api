@@ -4,6 +4,8 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
 from app.core.exceptions import ValidationBusinessError
+from app.core.sorting import SortSpec, sort_params
+from app.repositories.survey_results_repository import RESPONSES_DEFAULT_SORT, RESPONSES_SORT_COLUMNS
 from app.db.session import get_db
 from app.dependencies.portal_auth import require_portal_admin_or_hr
 from app.models.korisnik import Korisnik
@@ -60,6 +62,13 @@ def get_survey_statistics(
     return SurveyStatisticsResponse(**service.get_statistics(survey_id))
 
 
+responses_sort = sort_params(
+    allowed=list(RESPONSES_SORT_COLUMNS),
+    default_by=RESPONSES_DEFAULT_SORT.by,
+    default_dir=RESPONSES_DEFAULT_SORT.dir,
+)
+
+
 @router.get("/{survey_id}/responses", response_model=SurveyResponsesResponse)
 def get_survey_responses(
     survey_id: int,
@@ -70,6 +79,7 @@ def get_survey_responses(
     radno_mesto_sifra: str | None = Query(default=None),
     datum_od: datetime.datetime | None = Query(default=None),
     datum_do: datetime.datetime | None = Query(default=None),
+    sort: SortSpec = Depends(responses_sort),
     _: Korisnik = Depends(require_portal_admin_or_hr),
     service: SurveyResultsService = Depends(get_survey_results_service),
 ) -> SurveyResponsesResponse:
@@ -79,6 +89,9 @@ def get_survey_responses(
     radno_mesto_sifra = _normalize_filter(radno_mesto_sifra, RADNO_MESTO_MAX, "radno_mesto_sifra")
     return SurveyResponsesResponse(
         **service.get_responses(
-            survey_id, page, page_size, platni_broj, orgjed_sifra, radno_mesto_sifra, datum_od, datum_do
-        )
+            survey_id, page, page_size, platni_broj, orgjed_sifra, radno_mesto_sifra, datum_od, datum_do,
+            sort=sort,
+        ),
+        sort_by=sort.by,
+        sort_dir=sort.dir,
     )

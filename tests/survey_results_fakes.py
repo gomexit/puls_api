@@ -73,8 +73,10 @@ class FakeSurveyResultsRepo:
 
     # ------------------------------------------------------- detaljni odgovori
     def list_final_submissions(
-        self, survey_id, platni_broj, orgjed_sifra, radno_mesto_sifra, datum_od, datum_do, page, page_size
+        self, survey_id, platni_broj, orgjed_sifra, radno_mesto_sifra, datum_od, datum_do, page, page_size,
+        sort=None,
     ):
+        self.last_sort = sort
         items = []
         for p in self.survey_repo.submissions:
             if p.anketa_id != survey_id or p.korisnik_id is None:

@@ -1,6 +1,8 @@
 import datetime
 
-from pydantic import BaseModel
+from typing import Literal
+
+from pydantic import BaseModel, Field
 
 
 class AdminAuditLogItemOut(BaseModel):
@@ -20,6 +22,8 @@ class AdminAuditLogListResponse(BaseModel):
     page_size: int
     total: int
     has_more: bool
+    sort_by: str = Field(description="Kolona po kojoj je lista stvarno sortirana.")
+    sort_dir: Literal["asc", "desc"] = Field(description="Smer stvarnog sortiranja.")
 
 
 class AdminAuditLogDetailResponse(AdminAuditLogItemOut):

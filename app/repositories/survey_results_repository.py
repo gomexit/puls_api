@@ -3,10 +3,23 @@ import datetime
 from sqlalchemy import and_, case, exists, func, select
 from sqlalchemy.orm import Session
 
+from app.core.sorting import SortColumn, SortSpec, build_order_by, numeric_text
 from app.models.anketa_predaja import AnketaOdgovor, AnketaOdgovorOpcija, AnketaPredaja
 from app.models.anketa_ucesce import AnketaUcesce
 from app.models.korisnik import Korisnik
 from app.models.korisnik_raspored import KorisnikRaspored
+
+
+# Sortabilna polja liste pojedinacnih odgovora (neanonimne ankete); kljuc = ime polja iz odgovora
+# (`ime`/`prezime`/`platni_broj` su u `korisnik`).
+RESPONSES_SORT_COLUMNS: dict[str, SortColumn] = {
+    "datum_predaje": SortColumn(AnketaPredaja.datum_predaje),
+    "platni_broj": SortColumn(numeric_text(Korisnik.platni_broj)),
+    "ime": SortColumn(Korisnik.ime, text=True),
+    "prezime": SortColumn(Korisnik.prezime, text=True),
+}
+# Podrazumevani redosled (isti kao pre uvodjenja sortiranja): najskorije predate prve.
+RESPONSES_DEFAULT_SORT = SortSpec(by="datum_predaje", dir="desc")
 
 
 class SurveyResultsRepository:
@@ -100,6 +113,7 @@ class SurveyResultsRepository:
         datum_do: datetime.datetime | None,
         page: int,
         page_size: int,
+        sort: SortSpec | None = None,
     ) -> tuple[list[tuple[AnketaPredaja, Korisnik]], int]:
         """Samo za NEANONIMNE ankete (poziva se tek posle provere anonimnosti u servisu).
         Filter po org. jedinici/radnom mestu ide preko EXISTS - jedna predaja se nikad
@@ -130,7 +144,9 @@ class SurveyResultsRepository:
 
         total = int(self.db.execute(select(func.count()).select_from(stmt.subquery())).scalar_one())
         rows = self.db.execute(
-            stmt.order_by(AnketaPredaja.datum_predaje.desc(), AnketaPredaja.id.desc())
+            stmt.order_by(
+                *build_order_by(sort or RESPONSES_DEFAULT_SORT, RESPONSES_SORT_COLUMNS, AnketaPredaja.id)
+            )
             .offset((page - 1) * page_size)
             .limit(page_size)
         ).all()

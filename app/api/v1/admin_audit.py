@@ -4,6 +4,8 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
 from app.core.exceptions import ValidationBusinessError
+from app.core.sorting import SortSpec, sort_params
+from app.repositories.admin_audit_repository import AUDIT_DEFAULT_SORT, AUDIT_SORT_COLUMNS
 from app.db.session import get_db
 from app.dependencies.portal_auth import require_portal_admin_or_hr
 from app.models.korisnik import Korisnik
@@ -54,6 +56,13 @@ def _validate_naive_range(
         raise ValidationBusinessError("datum_do ne sme biti pre datum_od.")
 
 
+audit_sort = sort_params(
+    allowed=list(AUDIT_SORT_COLUMNS),
+    default_by=AUDIT_DEFAULT_SORT.by,
+    default_dir=AUDIT_DEFAULT_SORT.dir,
+)
+
+
 @router.get("", response_model=AdminAuditLogListResponse)
 def list_audit_logs(
     page: int = Query(default=1, ge=1),
@@ -65,6 +74,7 @@ def list_audit_logs(
     izvor: str | None = Query(default=None),
     datum_od: datetime.datetime | None = Query(default=None),
     datum_do: datetime.datetime | None = Query(default=None),
+    sort: SortSpec = Depends(audit_sort),
     _: Korisnik = Depends(require_portal_admin_or_hr),
     service: AdminAuditService = Depends(get_admin_audit_service),
 ) -> AdminAuditLogListResponse:
@@ -75,7 +85,8 @@ def list_audit_logs(
     entitet_id = _normalize_filter(entitet_id, ENTITET_ID_MAX, "entitet_id")
     izvor = _normalize_filter(izvor, IZVOR_MAX, "izvor", upper=True)
     result = service.list_logs(
-        page, page_size, platni_broj, sifra_akcije, tip_entiteta, entitet_id, izvor, datum_od, datum_do
+        page, page_size, platni_broj, sifra_akcije, tip_entiteta, entitet_id, izvor, datum_od, datum_do,
+        sort=sort,
     )
     return AdminAuditLogListResponse(
         items=[AdminAuditLogItemOut(**item) for item in result["items"]],
@@ -83,6 +94,8 @@ def list_audit_logs(
         page_size=result["page_size"],
         total=result["total"],
         has_more=result["has_more"],
+        sort_by=sort.by,
+        sort_dir=sort.dir,
     )
 
 

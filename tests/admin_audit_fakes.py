@@ -47,7 +47,9 @@ class FakeAdminAuditRepository:
         datum_do,
         page,
         page_size,
+        sort=None,
     ):
+        self.last_sort = sort
         items = list(self.logs.values())
         if platni_broj is not None:
             items = [l for l in items if l.platni_broj == platni_broj]
