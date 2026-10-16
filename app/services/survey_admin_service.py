@@ -4,6 +4,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
+from app.core.sorting import SortSpec
 from app.core.exceptions import (
     InvalidSurveyStatusTransitionError,
     SurveyNotFoundError,
@@ -377,8 +378,12 @@ class SurveyAdminService:
             raise
 
     # ------------------------------------------------------------------ citanje
-    def list_surveys(self, status, tip, datum_od, datum_do, page, page_size):
-        items, total = self.repo.list_surveys(status, tip, datum_od, datum_do, page, page_size)
+    def list_surveys(
+        self, status, tip, datum_od, datum_do, page, page_size, sort: SortSpec | None = None
+    ):
+        items, total = self.repo.list_surveys(
+            status, tip, datum_od, datum_do, page, page_size, sort=sort
+        )
         enriched = []
         for a in items:
             ciljanih = self.repo.count_participants(a.id)

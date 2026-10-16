@@ -11,7 +11,9 @@ Ugovor (isti na svim listama):
   ne moze da se pojavi na dve strane niti da nestane izmedju strana.
 - NULL vrednosti idu na kraj u oba smera (NULLS LAST).
 - Tekstualne kolone se sortiraju jezicki (NLSSORT XCROATIAN) jer je Oracle sesija BINARY,
-  a binarni redosled stavlja Š, Ž, Ć, Č, Đ iza Z.
+  a binarni redosled stavlja Š, Ž, Ć, Č, Đ iza Z. XCROATIAN stavlja cifre IZA slova, pa se
+  tekst koji pocinje cifrom izdvaja u prvu grupu ("1. Organizacija" ide pre "Ana").
+  Interpunkciju XCROATIAN ignorise, a cirilica ide ispred latinice (po redosledu pisma).
 """
 
 from collections.abc import Callable, Mapping, Sequence
@@ -19,7 +21,7 @@ from dataclasses import dataclass
 from typing import Literal
 
 from fastapi import Query
-from sqlalchemy import func, literal_column
+from sqlalchemy import case, func, literal_column, null
 from sqlalchemy.sql.elements import ColumnElement
 
 from app.core.exceptions import ValidationBusinessError
@@ -46,25 +48,54 @@ class SortSpec:
     dir: SortDirection = "asc"
 
 
+def workflow_order(column: ColumnElement, ordered_values: Sequence[str]) -> ColumnElement:
+    """CASE izraz: redni broj statusa po TOKU RADA (ne abecedno). Nepoznata vrednost ide na kraj."""
+    mapping = {value: position for position, value in enumerate(ordered_values, start=1)}
+    return case(mapping, value=column, else_=len(mapping) + 1)
+
+
+def flag(column: ColumnElement) -> ColumnElement:
+    """CHAR(1) 'D'/'N' kao 1/0, da rastuce sortiranje daje prvo 'ne' pa 'da' (D < N bi bilo obrnuto)."""
+    return case((column == "D", 1), else_=0)
+
+
+def numeric_text(column: ColumnElement, width: int = 30) -> ColumnElement:
+    """Tekstualni broj (npr. platni broj) sortiran brojcano: 1651 < 10286, a ne abecedno."""
+    return func.lpad(column, width, "0")
+
+
 def build_order_by(
     spec: SortSpec,
     columns: Mapping[str, SortColumn],
     tiebreaker: ColumnElement,
 ) -> list[ColumnElement]:
-    """Pravi ORDER BY: [kolona (NULLS LAST), tie-breaker]. `spec.by` mora biti kljuc mape;
-    inace je to greska programera (HTTP sloj je vec odbio nepoznato polje sa 422)."""
+    """Pravi ORDER BY: [(za tekst: grupa cifra), kolona (NULLS LAST), tie-breaker].
+    `spec.by` mora biti kljuc mape; inace je to greska programera (HTTP sloj je vec odbio
+    nepoznato polje sa 422)."""
     column = columns.get(spec.by)
     if column is None:
         raise ValueError(f"Kolona '{spec.by}' nije dozvoljena za sortiranje.")
 
-    expr = column.expr
-    if column.text:
-        expr = func.nlssort(expr, literal_column(f"'{TEXT_COLLATION}'"))
-
     descending = spec.dir == "desc"
-    primary = (expr.desc() if descending else expr.asc()).nulls_last()
-    tie = tiebreaker.desc() if descending else tiebreaker.asc()
-    return [primary, tie]
+
+    def directed(expression: ColumnElement) -> ColumnElement:
+        return (expression.desc() if descending else expression.asc()).nulls_last()
+
+    expr = column.expr
+    ordering: list[ColumnElement] = []
+    if column.text:
+        # 0 = pocinje cifrom, 1 = ostalo, NULL = prazno. NULL ostaje NULL da NULLS LAST
+        # drzi prazne vrednosti na kraju i za rastuce i za opadajuce sortiranje.
+        digits_first = case(
+            (expr.is_(None), null()),
+            (expr.regexp_match("^[0-9]"), 0),
+            else_=1,
+        )
+        ordering.append(directed(digits_first))
+        expr = func.nlssort(expr, literal_column(f"'{TEXT_COLLATION}'"))
+    ordering.append(directed(expr))
+    ordering.append(tiebreaker.desc() if descending else tiebreaker.asc())
+    return ordering
 
 
 def sort_params(

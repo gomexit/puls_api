@@ -1,7 +1,9 @@
 import datetime
 from decimal import Decimal
 
-from pydantic import BaseModel, field_validator
+from typing import Literal
+
+from pydantic import BaseModel, Field, field_validator
 
 from app.models.ideja import IDEJA_STATUSI
 
@@ -166,6 +168,8 @@ class AdminIdeaListResponse(BaseModel):
     total: int
     page: int
     page_size: int
+    sort_by: str = Field(description="Kolona po kojoj je lista stvarno sortirana.")
+    sort_dir: Literal["asc", "desc"] = Field(description="Smer stvarnog sortiranja.")
 
 
 class AdminIdeaStatusRequest(BaseModel):

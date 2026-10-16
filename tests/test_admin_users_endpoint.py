@@ -114,7 +114,8 @@ def test_list_response_shape_and_no_secrets(client, monkeypatch):
     resp = client.get("/api/v1/admin/users", headers=_headers())
     assert resp.status_code == 200
     body = resp.json()
-    assert set(body.keys()) == {"items", "page", "page_size", "total", "has_more"}
+    # postojeci kljucevi su nepromenjeni; sort_by/sort_dir su dodati (sortiranje po koloni)
+    assert set(body.keys()) == {"items", "page", "page_size", "total", "has_more", "sort_by", "sort_dir"}
     assert "lozinka_hash" not in resp.text
     assert "argon2$secret" not in resp.text
 

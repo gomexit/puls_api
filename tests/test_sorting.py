@@ -46,6 +46,22 @@ def test_text_column_uses_serbian_linguistic_collation():
     assert sql.endswith("T.ID ASC")
 
 
+def test_text_column_puts_digit_leading_values_first_then_the_collation():
+    # XCROATIAN stavlja cifre IZA slova; zato prvo ide grupa 'pocinje cifrom', pa kolacija
+    sql = _sql(SortSpec("naziv", "asc"))
+    order_by = sql.split("ORDER BY", 1)[1]
+    assert order_by.index("REGEXP_LIKE") < order_by.index("NLSSORT") < order_by.rindex("T.ID")
+    assert "WHEN (T.NAZIV IS NULL) THEN NULL" in order_by  # NULL ostaje NULL -> uvek na kraju
+    assert order_by.count("NULLS LAST") == 2
+    desc = _sql(SortSpec("naziv", "desc"))
+    assert desc.count("DESC NULLS LAST") == 2 and desc.endswith("T.ID DESC")
+
+
+def test_non_text_columns_have_no_digit_group():
+    assert "REGEXP_LIKE" not in _sql(SortSpec("broj", "asc"))
+    assert "REGEXP_LIKE" not in _sql(SortSpec("id", "desc"))
+
+
 def test_non_text_column_does_not_use_collation():
     assert "NLSSORT" not in _sql(SortSpec("broj", "asc"))
     assert "NLSSORT" not in _sql(SortSpec("id", "asc"))

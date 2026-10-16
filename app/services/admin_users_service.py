@@ -10,6 +10,7 @@ import datetime
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
+from app.core.sorting import SortSpec
 from app.core.exceptions import (
     AdminSelfActionNotAllowedError,
     SmsDeliveryFailedError,
@@ -69,9 +70,11 @@ class AdminUsersService:
         zakljucan: bool | None,
         uloga: str | None,
         orgjed: list[str] | None = None,
+        sort: SortSpec | None = None,
     ) -> dict:
         items, total = self.repo.list_users(
-            search, status_zaposlenja, status_naloga, zakljucan, uloga, page, page_size, orgjed=orgjed
+            search, status_zaposlenja, status_naloga, zakljucan, uloga, page, page_size,
+            orgjed=orgjed, sort=sort,
         )
         views = self._to_out_batch(items)
         return {

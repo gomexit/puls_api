@@ -103,7 +103,8 @@ class FakeSurveyRepo:
         self.surveys[a.id] = a
         return a
 
-    def list_surveys(self, status, tip, datum_od, datum_do, page, page_size):
+    def list_surveys(self, status, tip, datum_od, datum_do, page, page_size, sort=None):
+        self.last_sort = sort
         items = list(self.surveys.values())
         if status:
             items = [a for a in items if a.status == status]

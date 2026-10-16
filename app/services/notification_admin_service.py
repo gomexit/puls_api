@@ -4,6 +4,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
+from app.core.sorting import SortSpec
 from app.core.exceptions import (
     InvalidNotificationStatusTransitionError,
     NotificationCategoryAlreadyExistsError,
@@ -108,8 +109,12 @@ class NotificationAdminService:
             raise
 
     # =================================================================== OBAVESTENJA
-    def list_notifications(self, status, category, datum_od, datum_do, page, page_size) -> dict:
-        rows, total = self.repo.admin_list(status, category, datum_od, datum_do, page, page_size)
+    def list_notifications(
+        self, status, category, datum_od, datum_do, page, page_size, sort: SortSpec | None = None
+    ) -> dict:
+        rows, total = self.repo.admin_list(
+            status, category, datum_od, datum_do, page, page_size, sort=sort
+        )
         return {
             "items": [_list_view(r) for r in rows],
             "total": total,

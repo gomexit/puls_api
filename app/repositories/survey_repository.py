@@ -3,8 +3,10 @@ import datetime
 from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
+from app.core.sorting import SortColumn, SortSpec, build_order_by, flag, workflow_order
 from app.models.anketa import (
     ANKETA_STATUS_ARCHIVED,
+    ANKETA_STATUSI,
     UCESCE_SUBMITTED,
     Anketa,
     AnketaTip,
@@ -18,6 +20,23 @@ from app.models.anketa_struktura import (
     AnketaUslovVrednost,
 )
 from app.models.anketa_ucesce import AnketaNacrtOdgovor, AnketaNacrtOpcija, AnketaUcesce
+
+
+# Sortabilne kolone admin liste anketa (kljuc = ime polja iz odgovora; `datum_kreiranja` nije
+# u odgovoru, ali je podrazumevani redosled). Statusi po toku rada. Brojevi ciljanih/predatih
+# i procenat odziva se racunaju posebno i za sada nisu sortabilni.
+SURVEY_SORT_COLUMNS: dict[str, SortColumn] = {
+    "id": SortColumn(Anketa.id),
+    "naziv": SortColumn(Anketa.naziv, text=True),
+    "tip": SortColumn(Anketa.tip_sifra),
+    "status": SortColumn(workflow_order(Anketa.status, ANKETA_STATUSI)),
+    "anonimna": SortColumn(flag(Anketa.anonimna)),
+    "datum_pocetka": SortColumn(Anketa.datum_pocetka),
+    "datum_zavrsetka": SortColumn(Anketa.datum_zavrsetka),
+    "datum_kreiranja": SortColumn(Anketa.datum_kreiranja),
+}
+# Podrazumevani redosled (isti kao pre uvodjenja sortiranja): najnovije kreirane prve.
+SURVEY_DEFAULT_SORT = SortSpec(by="datum_kreiranja", dir="desc")
 
 
 class SurveyRepository:
@@ -53,6 +72,7 @@ class SurveyRepository:
         datum_do: datetime.datetime | None,
         page: int,
         page_size: int,
+        sort: SortSpec | None = None,
     ) -> tuple[list[Anketa], int]:
         stmt = select(Anketa)
         if status is not None:
@@ -66,7 +86,9 @@ class SurveyRepository:
         total = int(self.db.execute(select(func.count()).select_from(stmt.subquery())).scalar_one())
         items = list(
             self.db.execute(
-                stmt.order_by(Anketa.datum_kreiranja.desc(), Anketa.id.desc())
+                stmt.order_by(
+                    *build_order_by(sort or SURVEY_DEFAULT_SORT, SURVEY_SORT_COLUMNS, Anketa.id)
+                )
                 .offset((page - 1) * page_size)
                 .limit(page_size)
             )

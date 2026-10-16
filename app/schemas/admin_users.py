@@ -1,5 +1,7 @@
 import datetime
 
+from typing import Literal
+
 from pydantic import BaseModel, Field
 
 
@@ -30,6 +32,8 @@ class AdminUserListResponse(BaseModel):
     page_size: int
     total: int
     has_more: bool
+    sort_by: str = Field(description="Kolona po kojoj je lista stvarno sortirana.")
+    sort_dir: Literal["asc", "desc"] = Field(description="Smer stvarnog sortiranja.")
 
 
 class OrgjedOut(BaseModel):

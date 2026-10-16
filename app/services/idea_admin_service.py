@@ -4,6 +4,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
+from app.core.sorting import SortSpec
 from app.core.exceptions import (
     ActiveIdeaCycleAlreadyExistsError,
     IdeaCycleNotFoundError,
@@ -137,9 +138,10 @@ class IdeaAdminService:
         platni_broj: str | None,
         page: int,
         page_size: int,
+        sort: SortSpec | None = None,
     ) -> tuple[list[Ideja], int]:
         return self.idea_repository.admin_list(
-            ciklus_id, status, korisnik_id, platni_broj, page, page_size
+            ciklus_id, status, korisnik_id, platni_broj, page, page_size, sort=sort
         )
 
     def get_idea(self, idea_id: int) -> Ideja:

@@ -30,7 +30,10 @@ class FakeAdminUsersRepository:
         candidates.sort(key=lambda r: (r.primarni != "D", r.id))
         return candidates[0]
 
-    def list_users(self, search, status_zaposlenja, status_naloga, zakljucan, uloga, page, page_size, orgjed=None):
+    def list_users(
+        self, search, status_zaposlenja, status_naloga, zakljucan, uloga, page, page_size, orgjed=None, sort=None
+    ):
+        self.last_sort = sort
         items = list(self.korisnici.values())
         if search is not None:
             s = search.upper()

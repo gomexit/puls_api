@@ -154,7 +154,8 @@ class FakeNotificationRepo:
         return cycle_id in self.idea_cycle_ids
 
     # --- admin citanje ---
-    def admin_list(self, status, category, datum_od, datum_do, page, page_size):
+    def admin_list(self, status, category, datum_od, datum_do, page, page_size, sort=None):
+        self.last_sort = sort
         items = list(self.notifications.values())
         if status is not None:
             items = [o for o in items if o.status == status]

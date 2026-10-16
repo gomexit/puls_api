@@ -2,6 +2,8 @@ import datetime
 import re
 from urllib.parse import urlparse
 
+from typing import Literal
+
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.models.obavestenje import (
@@ -335,6 +337,8 @@ class AdminNotificationListResponse(BaseModel):
     total: int
     page: int
     page_size: int
+    sort_by: str = Field(description="Kolona po kojoj je lista stvarno sortirana.")
+    sort_dir: Literal["asc", "desc"] = Field(description="Smer stvarnog sortiranja.")
 
 
 class AdminNotificationTargetOut(BaseModel):

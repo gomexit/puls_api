@@ -434,7 +434,8 @@ class FakeIdeaRepository:
         ]
         return sorted(items, key=_top_sort_key)[:limit]
 
-    def admin_list(self, ciklus_id, status, korisnik_id, platni_broj, page, page_size):
+    def admin_list(self, ciklus_id, status, korisnik_id, platni_broj, page, page_size, sort=None):
+        self.last_sort = sort
         items = list(self.ideje)
         if ciklus_id is not None:
             items = [i for i in items if i.ciklus_id == ciklus_id]

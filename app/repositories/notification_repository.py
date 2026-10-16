@@ -3,7 +3,9 @@ import datetime
 from sqlalchemy import and_, case, delete, func, select
 from sqlalchemy.orm import Session
 
+from app.core.sorting import SortColumn, SortSpec, build_order_by, numeric_text, workflow_order
 from app.models.anketa import Anketa
+from app.models.obavestenje import OBAVESTENJE_STATUSI as _OBAVESTENJE_STATUSI
 from app.models.idea_ciklus import IdeaCiklus
 from app.models.ideja import Ideja
 from app.models.obavestenje import (
@@ -30,6 +32,37 @@ def _available_condition(now: datetime.datetime):
         Obavestenje.datum_isteka.is_not(None),
         Obavestenje.datum_isteka > now,
     )
+
+
+# Sortabilna polja admin liste obavestenja (kljuc = ime polja iz odgovora). `kategorija` se
+# sortira po nazivu kategorije; brojevi primalaca dolaze iz agregatnog LEFT JOIN-a.
+ADMIN_SORT_FIELDS: tuple[str, ...] = (
+    "id", "naslov", "kategorija", "status", "kreirao_platni_broj", "datum_objave",
+    "datum_isteka", "datum_kreiranja", "datum_izmene", "broj_primalaca", "broj_procitanih",
+    "broj_neprocitanih",
+)
+# Podrazumevani redosled (isti kao pre uvodjenja sortiranja): najnovije kreirana prva.
+ADMIN_DEFAULT_SORT = SortSpec(by="datum_kreiranja", dir="desc")
+
+
+def admin_sort_columns(rc) -> dict[str, SortColumn]:
+    """Mapa polje -> SQL izraz; `rc` je subquery sa brojem primalaca (ukupno/procitano)."""
+    ukupno = func.coalesce(rc.c.ukupno, 0)
+    procitano = func.coalesce(rc.c.procitano, 0)
+    return {
+        "id": SortColumn(Obavestenje.id),
+        "naslov": SortColumn(Obavestenje.naslov, text=True),
+        "kategorija": SortColumn(ObavestenjeKategorija.naziv, text=True),
+        "status": SortColumn(workflow_order(Obavestenje.status, _OBAVESTENJE_STATUSI)),
+        "kreirao_platni_broj": SortColumn(numeric_text(Obavestenje.kreirao_platni_broj)),
+        "datum_objave": SortColumn(Obavestenje.datum_objave),
+        "datum_isteka": SortColumn(Obavestenje.datum_isteka),
+        "datum_kreiranja": SortColumn(Obavestenje.datum_kreiranja),
+        "datum_izmene": SortColumn(Obavestenje.datum_izmene),
+        "broj_primalaca": SortColumn(ukupno),
+        "broj_procitanih": SortColumn(procitano),
+        "broj_neprocitanih": SortColumn(ukupno - procitano),
+    }
 
 
 class NotificationRepository:
@@ -196,6 +229,7 @@ class NotificationRepository:
         datum_do: datetime.datetime | None,
         page: int,
         page_size: int,
+        sort: SortSpec | None = None,
     ):
         # Namerno selektujemo pojedinacne kolone (BEZ NCLOB SADRZAJ) + agregatne
         # brojeve preko LEFT JOIN subquery-ja (jedan upit, bez N+1).
@@ -233,7 +267,9 @@ class NotificationRepository:
 
         total = int(self.db.execute(select(func.count()).select_from(base.subquery())).scalar_one())
         rows = self.db.execute(
-            base.order_by(Obavestenje.datum_kreiranja.desc(), Obavestenje.id.desc())
+            base.order_by(
+                *build_order_by(sort or ADMIN_DEFAULT_SORT, admin_sort_columns(rc), Obavestenje.id)
+            )
             .offset((page - 1) * page_size)
             .limit(page_size)
         ).all()

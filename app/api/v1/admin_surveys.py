@@ -4,6 +4,8 @@ from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.orm import Session
 
 from app.core.exceptions import ValidationBusinessError
+from app.core.sorting import SortSpec, sort_params
+from app.repositories.survey_repository import SURVEY_DEFAULT_SORT, SURVEY_SORT_COLUMNS
 from app.db.session import get_db
 from app.dependencies.portal_auth import require_portal_admin_or_hr
 from app.models.korisnik import Korisnik
@@ -103,6 +105,13 @@ def create_survey(
     return AdminSurveyCreatedResponse(id=anketa.id, status=anketa.status)
 
 
+surveys_sort = sort_params(
+    allowed=list(SURVEY_SORT_COLUMNS),
+    default_by=SURVEY_DEFAULT_SORT.by,
+    default_dir=SURVEY_DEFAULT_SORT.dir,
+)
+
+
 @router.get("/surveys", response_model=AdminSurveyListResponse)
 def list_surveys(
     status_filter: str | None = Query(default=None, alias="status"),
@@ -111,6 +120,7 @@ def list_surveys(
     datum_do: datetime.datetime | None = Query(default=None),
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=PAGE_SIZE_DEFAULT, ge=1, le=PAGE_SIZE_MAX),
+    sort: SortSpec = Depends(surveys_sort),
     _: Korisnik = Depends(require_portal_admin_or_hr),
     service: SurveyAdminService = Depends(get_survey_admin_service),
 ) -> AdminSurveyListResponse:
@@ -123,7 +133,9 @@ def list_surveys(
         raise ValidationBusinessError("Datum filtera mora biti bez vremenske zone (bez Z ili offseta).")
     if datum_od is not None and datum_do is not None and datum_do < datum_od:
         raise ValidationBusinessError("datum_do ne sme biti pre datum_od.")
-    enriched, total = service.list_surveys(status_filter, tip, datum_od, datum_do, page, page_size)
+    enriched, total = service.list_surveys(
+        status_filter, tip, datum_od, datum_do, page, page_size, sort=sort
+    )
     return AdminSurveyListResponse(
         items=[
             AdminSurveyListItem(
@@ -143,6 +155,8 @@ def list_surveys(
         total=total,
         page=page,
         page_size=page_size,
+        sort_by=sort.by,
+        sort_dir=sort.dir,
     )
 
 

@@ -3,7 +3,29 @@ import datetime
 from sqlalchemy import Select, func, select
 from sqlalchemy.orm import Session
 
-from app.models.ideja import IDEJA_STATUS_POSLATA, IDEJA_TOP_STATUSI, Ideja
+from app.core.sorting import SortColumn, SortSpec, build_order_by, numeric_text, workflow_order
+from app.models.ideja import IDEJA_STATUS_POSLATA, IDEJA_STATUSI, IDEJA_TOP_STATUSI, Ideja
+
+
+# Sortabilne kolone admin liste ideja (kljuc = ime polja iz odgovora). Status po toku rada.
+# OPIS (NCLOB) nije sortabilan.
+IDEA_SORT_COLUMNS: dict[str, SortColumn] = {
+    "id": SortColumn(Ideja.id),
+    "ciklus_id": SortColumn(Ideja.ciklus_id),
+    "platni_broj": SortColumn(numeric_text(Ideja.platni_broj)),
+    "ime_autora": SortColumn(Ideja.ime_autora, text=True),
+    "prezime_autora": SortColumn(Ideja.prezime_autora, text=True),
+    "orgjed_sifra": SortColumn(numeric_text(Ideja.orgjed_sifra)),
+    "naslov": SortColumn(Ideja.naslov, text=True),
+    "status": SortColumn(workflow_order(Ideja.status, IDEJA_STATUSI)),
+    "hr_ocena": SortColumn(Ideja.hr_ocena),
+    "ai_ocena": SortColumn(Ideja.ai_ocena),
+    "konacna_ocena": SortColumn(Ideja.konacna_ocena),
+    "datum_kreiranja": SortColumn(Ideja.datum_kreiranja),
+    "datum_izmene": SortColumn(Ideja.datum_izmene),
+}
+# Podrazumevani redosled (isti kao pre uvodjenja sortiranja): najnovije kreirane prve.
+IDEA_DEFAULT_SORT = SortSpec(by="datum_kreiranja", dir="desc")
 
 
 class IdeaRepository:
@@ -102,13 +124,14 @@ class IdeaRepository:
         platni_broj: str | None,
         page: int,
         page_size: int,
+        sort: SortSpec | None = None,
     ) -> tuple[list[Ideja], int]:
         base = self._admin_filter_query(ciklus_id, status, korisnik_id, platni_broj)
         total = int(
             self.db.execute(select(func.count()).select_from(base.subquery())).scalar_one()
         )
         stmt = (
-            base.order_by(Ideja.datum_kreiranja.desc(), Ideja.id.desc())
+            base.order_by(*build_order_by(sort or IDEA_DEFAULT_SORT, IDEA_SORT_COLUMNS, Ideja.id))
             .offset((page - 1) * page_size)
             .limit(page_size)
         )

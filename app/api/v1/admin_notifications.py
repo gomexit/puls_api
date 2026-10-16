@@ -4,6 +4,8 @@ from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.orm import Session
 
 from app.core.exceptions import ValidationBusinessError
+from app.core.sorting import SortSpec, sort_params
+from app.repositories.notification_repository import ADMIN_DEFAULT_SORT, ADMIN_SORT_FIELDS
 from app.db.session import get_db
 from app.dependencies.portal_auth import require_portal_admin_or_hr
 from app.models.korisnik import Korisnik
@@ -107,6 +109,13 @@ def update_category(
 
 
 # ============================================================== OBAVESTENJA
+notifications_sort = sort_params(
+    allowed=list(ADMIN_SORT_FIELDS),
+    default_by=ADMIN_DEFAULT_SORT.by,
+    default_dir=ADMIN_DEFAULT_SORT.dir,
+)
+
+
 @router.get("/notifications", response_model=AdminNotificationListResponse)
 def list_notifications(
     page: int = Query(default=1, ge=1),
@@ -115,6 +124,7 @@ def list_notifications(
     category: str | None = Query(default=None),
     datum_od: datetime.datetime | None = Query(default=None),
     datum_do: datetime.datetime | None = Query(default=None),
+    sort: SortSpec = Depends(notifications_sort),
     actor: Korisnik = Depends(require_portal_admin_or_hr),
     service: NotificationAdminService = Depends(get_notification_admin_service),
 ) -> AdminNotificationListResponse:
@@ -133,12 +143,15 @@ def list_notifications(
         datum_do,
         page,
         page_size,
+        sort=sort,
     )
     return AdminNotificationListResponse(
         items=[AdminNotificationListItem(**it) for it in result["items"]],
         total=result["total"],
         page=result["page"],
         page_size=result["page_size"],
+        sort_by=sort.by,
+        sort_dir=sort.dir,
     )
 
 

@@ -1,7 +1,9 @@
 from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.orm import Session
 
+from app.core.sorting import SortSpec, sort_params
 from app.db.session import get_db
+from app.repositories.idea_repository import IDEA_DEFAULT_SORT, IDEA_SORT_COLUMNS
 from app.dependencies.portal_auth import require_portal_admin_or_hr
 from app.models.idea_ciklus import IdeaCiklus
 from app.models.ideja import Ideja
@@ -94,6 +96,13 @@ def patch_idea_cycle(
 
 
 # --- Ideje ---
+ideas_sort = sort_params(
+    allowed=list(IDEA_SORT_COLUMNS),
+    default_by=IDEA_DEFAULT_SORT.by,
+    default_dir=IDEA_DEFAULT_SORT.dir,
+)
+
+
 @router.get("/ideas", response_model=AdminIdeaListResponse)
 def list_ideas(
     cycle_id: int | None = Query(default=None),
@@ -102,17 +111,20 @@ def list_ideas(
     platni_broj: str | None = Query(default=None),
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=PAGE_SIZE_DEFAULT, ge=1, le=PAGE_SIZE_MAX),
+    sort: SortSpec = Depends(ideas_sort),
     _: Korisnik = Depends(require_portal_admin_or_hr),
     service: IdeaAdminService = Depends(get_idea_admin_service),
 ) -> AdminIdeaListResponse:
     items, total = service.list_ideas(
-        cycle_id, status_filter, korisnik_id, platni_broj, page, page_size
+        cycle_id, status_filter, korisnik_id, platni_broj, page, page_size, sort=sort
     )
     return AdminIdeaListResponse(
         items=[_to_admin_idea_response(i) for i in items],
         total=total,
         page=page,
         page_size=page_size,
+        sort_by=sort.by,
+        sort_dir=sort.dir,
     )
 
 

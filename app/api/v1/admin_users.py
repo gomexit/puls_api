@@ -4,6 +4,8 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
 from app.core.exceptions import ValidationBusinessError
+from app.core.sorting import SortSpec, sort_params
+from app.repositories.admin_users_repository import USERS_DEFAULT_SORT, USERS_SORT_COLUMNS
 from app.db.session import get_db
 from app.dependencies.portal_auth import require_portal_admin
 from app.models.korisnik import Korisnik
@@ -68,6 +70,13 @@ def list_orgjed(
     return OrgjedListResponse(items=[OrgjedOut(**o) for o in service.list_orgjed()])
 
 
+users_sort = sort_params(
+    allowed=list(USERS_SORT_COLUMNS),
+    default_by=USERS_DEFAULT_SORT.by,
+    default_dir=USERS_DEFAULT_SORT.dir,
+)
+
+
 @router.get("", response_model=AdminUserListResponse)
 def list_users(
     page: int = Query(default=1, ge=1),
@@ -82,6 +91,7 @@ def list_users(
         description="Šifra org. jedinice; ponoviti za više (?orgjed=101&orgjed=205). "
         "Filtrira po primarnoj aktivnoj org. jedinici korisnika.",
     ),
+    sort: SortSpec = Depends(users_sort),
     _: Korisnik = Depends(require_portal_admin),
     service: AdminUsersService = Depends(get_admin_users_service),
 ) -> AdminUserListResponse:
@@ -95,6 +105,7 @@ def list_users(
         zakljucan,
         uloga,
         orgjed=_normalize_orgjed(orgjed),
+        sort=sort,
     )
     return AdminUserListResponse(
         items=[AdminUserOut(**u) for u in result["items"]],
@@ -102,6 +113,8 @@ def list_users(
         page_size=result["page_size"],
         total=result["total"],
         has_more=result["has_more"],
+        sort_by=sort.by,
+        sort_dir=sort.dir,
     )
 
 

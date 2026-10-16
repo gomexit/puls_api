@@ -1,5 +1,7 @@
 import datetime
 
+from typing import Literal
+
 from pydantic import BaseModel, Field, field_validator
 
 
@@ -377,6 +379,8 @@ class AdminSurveyListResponse(BaseModel):
     total: int
     page: int
     page_size: int
+    sort_by: str = Field(description="Kolona po kojoj je lista stvarno sortirana.")
+    sort_dir: Literal["asc", "desc"] = Field(description="Smer stvarnog sortiranja.")
 
 
 class AdminSurveyCreatedResponse(BaseModel):

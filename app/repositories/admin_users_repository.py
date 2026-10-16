@@ -1,6 +1,7 @@
 from sqlalchemy import case, exists, func, select
 from sqlalchemy.orm import Session, aliased
 
+from app.core.sorting import SortColumn, SortSpec, build_order_by, flag, numeric_text
 from app.models.iis_orgjed import IisOrgjed
 from app.models.iis_radno_mesto import IisRadnoMesto
 from app.models.korisnik import Korisnik
@@ -34,6 +35,27 @@ def _primary_raspored_id(raspored_alias):
     return func.coalesce(min_primarni, min_bilo_koji)
 
 
+# Sortabilne kolone liste korisnika (kljuc = ime polja iz odgovora). Org. jedinica, radno
+# mesto i uloge namerno NISU sortabilni (ucitavaju se posebnim upitima).
+USERS_SORT_COLUMNS: dict[str, SortColumn] = {
+    "id": SortColumn(Korisnik.id),
+    "platni_broj": SortColumn(numeric_text(Korisnik.platni_broj)),
+    "ime": SortColumn(Korisnik.ime, text=True),
+    "prezime": SortColumn(Korisnik.prezime, text=True),
+    "broj_telefona": SortColumn(Korisnik.broj_telefona),
+    "status_zaposlenja": SortColumn(Korisnik.status_zaposlenja),
+    "status_naloga": SortColumn(Korisnik.status_naloga),
+    "zakljucan": SortColumn(flag(Korisnik.zakljucan)),
+    "broj_neuspesnih_prijava": SortColumn(Korisnik.broj_neuspesnih_prijava),
+    "obavezna_promena_lozinke": SortColumn(flag(Korisnik.obavezna_promena_lozinke)),
+    "telefon_potvrdjen": SortColumn(flag(Korisnik.telefon_potvrdjen)),
+    "datum_poslednje_prijave": SortColumn(Korisnik.datum_poslednje_prijave),
+    "datum_sinhronizacije": SortColumn(Korisnik.datum_sinhronizacije),
+}
+# Podrazumevani redosled (isti kao pre uvodjenja sortiranja): id rastuce.
+USERS_DEFAULT_SORT = SortSpec(by="id", dir="asc")
+
+
 class AdminUsersRepository:
     """Read/write pristup PULS_KORISNICI za admin USERS modul. Nikada ne selektuje
     LOZINKA_HASH u listi/detalju odgovora (samo za internu proveru/izmenu)."""
@@ -58,6 +80,7 @@ class AdminUsersRepository:
         page: int,
         page_size: int,
         orgjed: list[str] | None = None,
+        sort: SortSpec | None = None,
     ) -> tuple[list[Korisnik], int]:
         stmt = select(Korisnik)
         if search is not None:
@@ -101,7 +124,9 @@ class AdminUsersRepository:
 
         total = int(self.db.execute(select(func.count()).select_from(stmt.subquery())).scalar_one())
         rows = self.db.execute(
-            stmt.order_by(Korisnik.id).offset((page - 1) * page_size).limit(page_size)
+            stmt.order_by(*build_order_by(sort or USERS_DEFAULT_SORT, USERS_SORT_COLUMNS, Korisnik.id))
+            .offset((page - 1) * page_size)
+            .limit(page_size)
         ).scalars().all()
         return list(rows), total
 
