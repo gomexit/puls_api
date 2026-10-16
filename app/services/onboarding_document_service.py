@@ -23,7 +23,11 @@ from app.models.onboarding_dokument import (
     is_valid_onboarding_document_transition,
 )
 from app.repositories.audit_repository import AuditRepository
-from app.repositories.onboarding_document_repository import OnboardingDocumentRepository
+from app.core.sorting import SortSpec
+from app.repositories.onboarding_document_repository import (
+    ADMIN_DEFAULT_SORT,
+    OnboardingDocumentRepository,
+)
 from app.services.audit_service import AuditAction, AuditService
 from app.services.onboarding_pdf import (
     NAZIV_MAX,
@@ -158,7 +162,12 @@ class OnboardingDocumentService:
 
     # ================================================================= ADMIN
     def list_admin(
-        self, status: str | None, search: str | None, page: int, page_size: int
+        self,
+        status: str | None,
+        search: str | None,
+        page: int,
+        page_size: int,
+        sort: SortSpec | None = None,
     ) -> dict:
         status_norm = normalize_status(status) if status is not None else None
         search_norm: str | None = None
@@ -167,12 +176,17 @@ class OnboardingDocumentService:
             if len(search_norm) > SEARCH_MAX:
                 raise ValidationBusinessError(f"Pretraga može imati najviše {SEARCH_MAX} karaktera.")
             search_norm = search_norm or None
-        rows, total = self.repo.list_admin(status_norm, search_norm, page, page_size)
+        effective_sort = sort or ADMIN_DEFAULT_SORT
+        rows, total = self.repo.list_admin(
+            status_norm, search_norm, page, page_size, effective_sort
+        )
         return {
             "items": [_admin_view(r) for r in rows],
             "total": total,
             "page": page,
             "page_size": page_size,
+            "sort_by": effective_sort.by,
+            "sort_dir": effective_sort.dir,
         }
 
     def get_admin(self, document_id: int) -> dict:

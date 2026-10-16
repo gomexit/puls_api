@@ -1,7 +1,10 @@
-from sqlalchemy import func, select
+from sqlalchemy import case, func, select
 from sqlalchemy.orm import Session
 
+from app.core.sorting import SortColumn, SortSpec, build_order_by
 from app.models.onboarding_dokument import (
+    ONB_DOKUMENT_STATUS_ARCHIVED,
+    ONB_DOKUMENT_STATUS_DRAFT,
     ONB_DOKUMENT_STATUS_PUBLISHED,
     OnboardingDokument as Dok,
 )
@@ -48,6 +51,33 @@ _CONTENT_COLUMNS = (
 
 _ORDER = (Dok.redosled.asc(), Dok.id.asc())
 
+# Sortabilne kolone admin liste: kljuc je ime polja IZ ODGOVORA. Status se sortira po
+# toku rada (DRAFT, PUBLISHED, ARCHIVED), a ne abecedno. Tekst (NVARCHAR2) se sortira
+# jezicki. OPIS (NCLOB) i SADRZAJ (BLOB) namerno nisu sortabilni.
+_STATUS_FLOW = case(
+    {
+        ONB_DOKUMENT_STATUS_DRAFT: 1,
+        ONB_DOKUMENT_STATUS_PUBLISHED: 2,
+        ONB_DOKUMENT_STATUS_ARCHIVED: 3,
+    },
+    value=Dok.status,
+    else_=4,
+)
+ADMIN_SORT_COLUMNS: dict[str, SortColumn] = {
+    "id": SortColumn(Dok.id),
+    "naziv": SortColumn(Dok.naziv, text=True),
+    "originalni_naziv_fajla": SortColumn(Dok.originalni_naziv_fajla, text=True),
+    "status": SortColumn(_STATUS_FLOW),
+    "redosled": SortColumn(Dok.redosled),
+    "verzija": SortColumn(Dok.verzija),
+    "velicina_bajtova": SortColumn(Dok.velicina_bajtova),
+    "datum_kreiranja": SortColumn(Dok.datum_kreiranja),
+    "datum_izmene": SortColumn(Dok.datum_izmene),
+    "datum_objave": SortColumn(Dok.datum_objave),
+}
+# Podrazumevani redosled (isti kao pre uvodjenja sortiranja): redosled, pa id.
+ADMIN_DEFAULT_SORT = SortSpec(by="redosled", dir="asc")
+
 
 def _escape_like(term: str) -> str:
     return term.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
@@ -79,7 +109,14 @@ class OnboardingDocumentRepository:
         return self.db.execute(stmt).first()
 
     # --------------------------------------------------------------- admin
-    def list_admin(self, status: str | None, search: str | None, page: int, page_size: int):
+    def list_admin(
+        self,
+        status: str | None,
+        search: str | None,
+        page: int,
+        page_size: int,
+        sort: SortSpec | None = None,
+    ):
         conditions = []
         if status is not None:
             conditions.append(Dok.status == status)
@@ -88,10 +125,11 @@ class OnboardingDocumentRepository:
             conditions.append(func.lower(Dok.naziv).like(pattern, escape="\\"))
 
         total = self.db.execute(select(func.count()).select_from(Dok).where(*conditions)).scalar_one()
+        order_by = build_order_by(sort or ADMIN_DEFAULT_SORT, ADMIN_SORT_COLUMNS, Dok.id)
         stmt = (
             select(*_ADMIN_COLUMNS)
             .where(*conditions)
-            .order_by(*_ORDER)
+            .order_by(*order_by)
             .offset((page - 1) * page_size)
             .limit(page_size)
         )

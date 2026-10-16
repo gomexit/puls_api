@@ -9,10 +9,15 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.api.v1.onboarding_documents import PDF_RESPONSES, pdf_inline_response
 from app.core.exceptions import ValidationBusinessError
+from app.core.sorting import SortSpec, sort_params
 from app.db.session import get_db
 from app.dependencies.portal_auth import require_portal_admin_or_hr
 from app.models.korisnik import Korisnik
 from app.models.onboarding_dokument import ONB_DOKUMENT_STATUSI
+from app.repositories.onboarding_document_repository import (
+    ADMIN_DEFAULT_SORT,
+    ADMIN_SORT_COLUMNS,
+)
 from app.schemas.common import ErrorResponse
 from app.schemas.onboarding_document import (
     STATUS_DESCRIPTION,
@@ -65,6 +70,13 @@ R_413 = {413: {"model": ErrorResponse, "description": "`PDF_DOCUMENT_TOO_LARGE` 
 R_409_ARCHIVED = {409: {"model": ErrorResponse, "description": "`ONBOARDING_DOCUMENT_ARCHIVED` - arhiviran dokument se ne menja."}}
 
 PAGE_SIZE_DEFAULT = 20
+
+# Sortiranje po jednoj koloni (?sort_by=&sort_dir=). Bez parametara: redosled, pa id.
+list_sort = sort_params(
+    allowed=list(ADMIN_SORT_COLUMNS),
+    default_by=ADMIN_DEFAULT_SORT.by,
+    default_dir=ADMIN_DEFAULT_SORT.dir,
+)
 PAGE_SIZE_MAX = 100
 
 
@@ -78,7 +90,9 @@ def get_onboarding_document_service(db: Session = Depends(get_db)) -> Onboarding
     summary="Lista onboarding dokumenata (svi statusi)",
     description=(
         "Admin/HR vidi dokumente u **svim** statusima (DRAFT, PUBLISHED, ARCHIVED). "
-        "Sortiranje: `redosled` pa `id`. Filter `status` je opcion; `search` trazi po nazivu.\n\n"
+        "Paginacija: `page`, `page_size`. Sortiranje po jednoj koloni: `sort_by` + `sort_dir` "
+        "(podrazumevano `redosled` rastuce, pa `id`); odgovor vraca stvarno primenjeni "
+        "`sort_by`/`sort_dir`. Filter `status` je opcion; `search` trazi po nazivu.\n\n"
         + STATUS_DESCRIPTION
     ),
 )
@@ -93,15 +107,18 @@ def list_documents(
     search: str | None = Query(default=None),
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=PAGE_SIZE_DEFAULT, ge=1, le=PAGE_SIZE_MAX),
+    sort: SortSpec = Depends(list_sort),
     actor: Korisnik = Depends(require_portal_admin_or_hr),
     service: OnboardingDocumentService = Depends(get_onboarding_document_service),
 ) -> AdminOnboardingDocumentListResponse:
-    result = service.list_admin(status_filter, search, page, page_size)
+    result = service.list_admin(status_filter, search, page, page_size, sort)
     return AdminOnboardingDocumentListResponse(
         items=[AdminOnboardingDocumentOut(**it) for it in result["items"]],
         total=result["total"],
         page=result["page"],
         page_size=result["page_size"],
+        sort_by=result["sort_by"],
+        sort_dir=result["sort_dir"],
     )
 
 

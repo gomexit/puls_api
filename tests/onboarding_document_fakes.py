@@ -111,16 +111,41 @@ class FakeOnboardingDocumentRepo:
         return self.get_published(document_id)
 
     # --- admin ---
-    def list_admin(self, status, search, page, page_size):
+    def list_admin(self, status, search, page, page_size, sort=None):
         self._touch()
+        self.last_sort = sort
         docs = list(self.docs.values())
         if status is not None:
             docs = [d for d in docs if d.status == status]
         if search:
             docs = [d for d in docs if search.lower() in d.naziv.lower()]
-        docs = self._sorted(docs)
+        docs = self._sorted_by(docs, sort)
         start = (page - 1) * page_size
         return docs[start : start + page_size], len(docs)
+
+    # Python ekvivalent SQL sortiranja: NULLS LAST u oba smera, tie-breaker ID u istom
+    # smeru, status po toku rada, tekst jezicki (srpska latinica).
+    _SERBIAN = {c: i for i, c in enumerate("abcčćdđefghijklmnoprsštuvzž")}
+    _STATUS_FLOW = {"DRAFT": 1, "PUBLISHED": 2, "ARCHIVED": 3}
+
+    def _value(self, doc, by):
+        if by == "status":
+            return self._STATUS_FLOW.get(doc.status, 4)
+        value = getattr(doc, by)
+        if by in ("naziv", "originalni_naziv_fajla") and value is not None:
+            return tuple(self._SERBIAN.get(c, 100 + ord(c)) for c in value.lower())
+        return value
+
+    def _sorted_by(self, docs, sort):
+        if sort is None:
+            return self._sorted(docs)
+        descending = sort.dir == "desc"
+        present = [d for d in docs if self._value(d, sort.by) is not None]
+        missing = [d for d in docs if self._value(d, sort.by) is None]
+        key = lambda d: (self._value(d, sort.by), int(d.id))  # noqa: E731
+        return sorted(present, key=key, reverse=descending) + sorted(
+            missing, key=lambda d: int(d.id), reverse=descending
+        )
 
     def get_admin(self, document_id):
         self._touch()

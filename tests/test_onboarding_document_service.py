@@ -372,3 +372,20 @@ def test_update_with_redosled_above_maximum_is_rejected_before_lock_and_write():
         service.update(_actor(), 1, "N", None, REDOSLED_MAX + 1)
     assert repo.for_update_calls == 0 and db.committed == 0 and audit.entries == []
     assert int(dok.redosled) == 3
+
+
+# ============================================================ SORTIRANJE (servis)
+def test_list_admin_passes_sort_to_repository_and_echoes_it():
+    from app.core.sorting import SortSpec
+
+    service, _, repo, _ = _service(make_dokument(id=1), make_dokument(id=2))
+    result = service.list_admin(None, None, 1, 20, SortSpec("naziv", "desc"))
+    assert repo.last_sort == SortSpec("naziv", "desc")
+    assert (result["sort_by"], result["sort_dir"]) == ("naziv", "desc")
+
+
+def test_list_admin_defaults_to_redosled_asc_when_no_sort():
+    service, _, repo, _ = _service(make_dokument(id=1))
+    result = service.list_admin(None, None, 1, 20)
+    assert (result["sort_by"], result["sort_dir"]) == ("redosled", "asc")
+    assert repo.last_sort.by == "redosled" and repo.last_sort.dir == "asc"

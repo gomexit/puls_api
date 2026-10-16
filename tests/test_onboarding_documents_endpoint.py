@@ -787,3 +787,187 @@ def test_openapi_constraints_match_real_validation():
         limits.add(props["naziv"]["maxLength"])
         limits.add(opis_max_length(props))
     assert limits == {200, 4000}
+
+
+# ============================================================ SORTIRANJE + PAGINACIJA
+NAMES = ["Šuma", "Čaj", "Zora", "Ćup", "Đak", "Ana", "Žaba"]
+SERBIAN_ASC = ["Ana", "Čaj", "Ćup", "Đak", "Šuma", "Zora", "Žaba"]
+
+
+def _seed_names(env: Env):
+    for i, naziv in enumerate(NAMES, start=1):
+        env.repo.seed(make_dokument(id=i, naziv=naziv, redosled=1))
+
+
+def _names(resp):
+    return [i["naziv"] for i in resp.json()["items"]]
+
+
+def test_sort_by_naziv_uses_serbian_alphabet_both_directions(client, monkeypatch):
+    _use_portal(monkeypatch)
+    env = Env()
+    _seed_names(env)
+    _wire_services(env)
+    asc = client.get(ADMIN, headers=_h(), params={"sort_by": "naziv", "sort_dir": "asc"})
+    desc = client.get(ADMIN, headers=_h(), params={"sort_by": "naziv", "sort_dir": "desc"})
+    assert _names(asc) == SERBIAN_ASC
+    assert _names(desc) == list(reversed(SERBIAN_ASC))
+    body = asc.json()
+    assert (body["sort_by"], body["sort_dir"]) == ("naziv", "asc")
+
+
+def test_default_order_and_echo_are_unchanged(client, monkeypatch):
+    _use_portal(monkeypatch)
+    env = Env()
+    env.repo.seed(make_dokument(id=1, redosled=3))
+    env.repo.seed(make_dokument(id=2, redosled=1))
+    env.repo.seed(make_dokument(id=3, redosled=1))
+    _wire_services(env)
+    body = client.get(ADMIN, headers=_h()).json()
+    assert [i["id"] for i in body["items"]] == [2, 3, 1]
+    assert (body["sort_by"], body["sort_dir"]) == ("redosled", "asc")
+
+
+def test_sort_dir_alone_applies_to_default_column_and_values_are_case_insensitive(client, monkeypatch):
+    _use_portal(monkeypatch)
+    env = Env()
+    for i, r in enumerate((5, 1, 3), start=1):
+        env.repo.seed(make_dokument(id=i, redosled=r))
+    _wire_services(env)
+    only_dir = client.get(ADMIN, headers=_h(), params={"sort_dir": "DESC"}).json()
+    assert [i["redosled"] for i in only_dir["items"]] == [5, 3, 1]
+    upper = client.get(ADMIN, headers=_h(), params={"sort_by": "REDOSLED", "sort_dir": "Asc"}).json()
+    assert [i["redosled"] for i in upper["items"]] == [1, 3, 5]
+    assert (upper["sort_by"], upper["sort_dir"]) == ("redosled", "asc")
+
+
+def test_every_documented_column_sorts_in_both_directions(client, monkeypatch):
+    from app.repositories.onboarding_document_repository import ADMIN_SORT_COLUMNS
+
+    _use_portal(monkeypatch)
+    env = Env()
+    _seed_names(env)
+    _wire_services(env)
+    for column in ADMIN_SORT_COLUMNS:
+        for direction in ("asc", "desc"):
+            resp = client.get(ADMIN, headers=_h(), params={"sort_by": column, "sort_dir": direction})
+            assert resp.status_code == 200, (column, direction)
+            assert (resp.json()["sort_by"], resp.json()["sort_dir"]) == (column, direction)
+            assert len(resp.json()["items"]) == len(NAMES)
+
+
+def test_null_datum_objave_is_last_in_both_directions(client, monkeypatch):
+    _use_portal(monkeypatch)
+    env = Env()
+    env.repo.seed(make_dokument(id=1, status="DRAFT"))  # datum_objave = NULL
+    env.repo.seed(make_dokument(id=2, status="PUBLISHED", datum_objave=FIXED_NOW.replace(day=1)))
+    env.repo.seed(make_dokument(id=3, status="PUBLISHED", datum_objave=FIXED_NOW.replace(day=9)))
+    _wire_services(env)
+    asc = client.get(ADMIN, headers=_h(), params={"sort_by": "datum_objave", "sort_dir": "asc"})
+    desc = client.get(ADMIN, headers=_h(), params={"sort_by": "datum_objave", "sort_dir": "desc"})
+    assert [i["id"] for i in asc.json()["items"]] == [2, 3, 1]
+    assert [i["id"] for i in desc.json()["items"]] == [3, 2, 1]
+
+
+def test_status_sorted_by_workflow_not_alphabetically(client, monkeypatch):
+    _use_portal(monkeypatch)
+    env = Env()
+    env.repo.seed(make_dokument(id=1, status="ARCHIVED"))
+    env.repo.seed(make_dokument(id=2, status="PUBLISHED"))
+    env.repo.seed(make_dokument(id=3, status="DRAFT"))
+    _wire_services(env)
+    asc = client.get(ADMIN, headers=_h(), params={"sort_by": "status"}).json()["items"]
+    desc = client.get(ADMIN, headers=_h(), params={"sort_by": "status", "sort_dir": "desc"}).json()["items"]
+    assert [i["status"] for i in asc] == ["DRAFT", "PUBLISHED", "ARCHIVED"]
+    assert [i["status"] for i in desc] == ["ARCHIVED", "PUBLISHED", "DRAFT"]
+
+
+@pytest.mark.parametrize("direction", ["asc", "desc"])
+def test_paging_is_stable_when_sort_column_has_duplicates(client, monkeypatch, direction):
+    # svih 7 dokumenata ima ISTU vrednost sortirane kolone (redosled=1): bez tie-breakera
+    # bi se redovi mogli ponavljati/gubiti izmedju strana.
+    _use_portal(monkeypatch)
+    env = Env()
+    _seed_names(env)
+    _wire_services(env)
+    params = {"sort_by": "redosled", "sort_dir": direction, "page_size": 3}
+    pages = [client.get(ADMIN, headers=_h(), params={**params, "page": p}).json() for p in (1, 2, 3, 4)]
+    ids = [i["id"] for page in pages for i in page["items"]]
+    assert len(ids) == len(set(ids)) == 7  # nema duplikata ni izgubljenih
+    assert ids == sorted(ids, reverse=(direction == "desc"))  # tie-breaker ID u istom smeru
+    assert [len(p["items"]) for p in pages] == [3, 3, 1, 0]
+    assert all(p["total"] == 7 for p in pages)
+
+
+def test_sort_combines_with_status_filter_search_and_paging(client, monkeypatch):
+    _use_portal(monkeypatch)
+    env = Env()
+    for i, (naziv, status) in enumerate(
+        [("Čaj pravilnik", "PUBLISHED"), ("Ana pravilnik", "PUBLISHED"), ("Žaba pravilnik", "PUBLISHED"),
+         ("Dom pravilnik", "DRAFT"), ("Uputstvo", "PUBLISHED")], start=1):
+        env.repo.seed(make_dokument(id=i, naziv=naziv, status=status))
+    _wire_services(env)
+    params = {"status": "PUBLISHED", "search": "pravilnik", "sort_by": "naziv", "sort_dir": "desc", "page_size": 2}
+    page1 = client.get(ADMIN, headers=_h(), params=params).json()
+    page2 = client.get(ADMIN, headers=_h(), params={**params, "page": 2}).json()
+    assert [i["naziv"] for i in page1["items"]] == ["Žaba pravilnik", "Čaj pravilnik"]
+    assert [i["naziv"] for i in page2["items"]] == ["Ana pravilnik"]
+    assert page1["total"] == 3
+
+
+@pytest.mark.parametrize(
+    "sort_by",
+    ["sadrzaj", "opis", "sha256", "mime_tip", "kreirao_platni_broj", "nepoznato",
+     "naziv; DROP TABLE x", "1=1", "naziv,redosled", "(select 1 from dual)"],
+)
+def test_sort_by_outside_whitelist_is_validation_error_and_never_reaches_repository(
+    client, monkeypatch, sort_by
+):
+    _use_portal(monkeypatch)
+    env = Env()
+    _seed_names(env)
+    _wire_services(env)
+    resp = client.get(ADMIN, headers=_h(), params={"sort_by": sort_by})
+    assert resp.status_code == 422
+    assert resp.json()["error"]["code"] == "VALIDATION_ERROR"
+    assert "Dozvoljeno:" in resp.json()["error"]["message"]
+    assert not hasattr(env.repo, "last_sort")  # repozitorijum nije ni pozvan
+
+
+@pytest.mark.parametrize("sort_dir", ["up", "ascending", "asc,desc", "0", "desc; --"])
+def test_invalid_sort_dir_is_validation_error(client, monkeypatch, sort_dir):
+    _use_portal(monkeypatch)
+    _wire_services(Env())
+    resp = client.get(ADMIN, headers=_h(), params={"sort_by": "naziv", "sort_dir": sort_dir})
+    assert resp.status_code == 422
+    assert resp.json()["error"]["code"] == "VALIDATION_ERROR"
+
+
+def test_blank_sort_params_from_datatable_are_ignored(client, monkeypatch):
+    _use_portal(monkeypatch)
+    _wire_services(Env())
+    resp = client.get(ADMIN, headers=_h(), params={"sort_by": "", "sort_dir": ""})
+    assert resp.status_code == 200
+    assert (resp.json()["sort_by"], resp.json()["sort_dir"]) == ("redosled", "asc")
+
+
+def test_sorting_requires_authentication_like_the_rest(client, monkeypatch):
+    _use_portal(monkeypatch)
+    resp = client.get(ADMIN, params={"sort_by": "naziv"})
+    assert resp.status_code == 401
+
+
+def test_openapi_documents_sort_parameters_and_response_fields():
+    from app.repositories.onboarding_document_repository import ADMIN_SORT_COLUMNS
+
+    spec = app.openapi()
+    operation = spec["paths"][ADMIN]["get"]
+    params = {p["name"]: p for p in operation["parameters"]}
+    assert params["sort_by"]["schema"]["enum"] == list(ADMIN_SORT_COLUMNS)
+    assert params["sort_dir"]["schema"]["enum"] == ["asc", "desc"]
+    assert "redosled" in params["sort_by"]["description"]
+    assert {"page", "page_size", "status", "search"} <= set(params)
+    assert "sort_by" in operation["description"]
+    response = spec["components"]["schemas"]["AdminOnboardingDocumentListResponse"]["properties"]
+    assert {"items", "total", "page", "page_size", "sort_by", "sort_dir"} <= set(response)
+    assert response["sort_dir"]["enum"] == ["asc", "desc"]

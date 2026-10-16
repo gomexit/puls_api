@@ -100,9 +100,11 @@ class AdminOnboardingDocumentOut(BaseModel):
 
 class AdminOnboardingDocumentListResponse(BaseModel):
     items: list[AdminOnboardingDocumentOut]
-    total: int
+    total: int = Field(description="Ukupan broj dokumenata posle filtera (za paginaciju).")
     page: int
     page_size: int
+    sort_by: str = Field(description="Kolona po kojoj je lista stvarno sortirana.")
+    sort_dir: Literal["asc", "desc"] = Field(description="Smer stvarnog sortiranja.")
 
 
 class AdminOnboardingDocumentUpdateRequest(BaseModel):
