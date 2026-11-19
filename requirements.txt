@@ -12,6 +12,7 @@ argon2-cffi==25.1.0
 python-multipart==0.0.32
 APScheduler==3.11.3
 pypdf==6.20.1
+pillow==13.0.0
 
 # --- Push extra (project.optional-dependencies.push) ---
 # Potrebno samo za push worker sa FCM_ENABLED=true (lazy import, aplikacija/testovi ga ne zahtevaju).

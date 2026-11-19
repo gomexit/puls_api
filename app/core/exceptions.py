@@ -316,6 +316,38 @@ class OnboardingDocumentNotDraftError(PulsApiError):
     message = "PDF sadržaj može da se zameni samo dok je dokument u statusu DRAFT."
 
 
+# --- Modul SLIKE (faza 0) ---
+class ImageNotFoundError(PulsApiError):
+    # Isti odgovor za nepostojecu i arhiviranu sliku kada je trazi zaposleni.
+    code = "IMAGE_NOT_FOUND"
+    status_code = status.HTTP_404_NOT_FOUND
+    message = "Slika nije pronađena ili više nije dostupna."
+
+
+class InvalidImageError(PulsApiError):
+    code = "INVALID_IMAGE"
+    status_code = 422
+    message = "Fajl nije ispravna slika."
+
+
+class ImageTooLargeError(PulsApiError):
+    code = "IMAGE_TOO_LARGE"
+    status_code = status.HTTP_413_CONTENT_TOO_LARGE
+    message = "Slika je veća od dozvoljene veličine."
+
+
+class InvalidImageStatusError(PulsApiError):
+    code = "INVALID_IMAGE_STATUS"
+    status_code = 422
+    message = "Nepoznat status slike."
+
+
+class ImageArchivedError(PulsApiError):
+    code = "IMAGE_ARCHIVED"
+    status_code = status.HTTP_409_CONFLICT
+    message = "Arhivirana slika se više ne može menjati."
+
+
 def register_exception_handlers(app: FastAPI) -> None:
     @app.exception_handler(PulsApiError)
     async def handle_puls_api_error(request: Request, exc: PulsApiError) -> JSONResponse:

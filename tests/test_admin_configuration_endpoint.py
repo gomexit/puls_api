@@ -124,13 +124,13 @@ def test_put_no_service_key_401(client, monkeypatch):
 
 
 # ============================================================ osnovni ugovori
-def test_get_returns_exactly_9_keys_and_no_secrets(client, monkeypatch):
+def test_get_returns_all_16_keys_and_no_secrets(client, monkeypatch):
     _authed(monkeypatch)
     _use_service(_make_service())
     resp = client.get("/api/v1/admin/configuration", headers=_headers())
     assert resp.status_code == 200
     body = resp.json()
-    assert len(body["items"]) == 9
+    assert len(body["items"]) == 16
     dumped = str(body)
     for forbidden in ("DB_PASSWORD", "PORTAL_SERVICE_KEY", "RESET_CODE_PEPPER", "FCM_CREDENTIALS", "DB_USER", "DB_DSN"):
         assert forbidden not in dumped

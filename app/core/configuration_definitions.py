@@ -116,6 +116,44 @@ def validate_https_url(raw: str, label: str) -> str:
     return v
 
 
+_CODE_LIST_ITEM_RE = re.compile(r"^[A-Za-z0-9_-]{1,50}$")
+_CODE_LIST_MAX_ITEMS = 100
+_CODE_LIST_MAX_LEN = 4000
+
+
+def validate_module_mode(raw: str, label: str) -> str:
+    """ISKLJUCEN, PILOT ili SVI (bez obzira na velika/mala slova); upisuje se velikim slovima."""
+    from app.core.modules import MODUL_REZIMI
+
+    v = raw.strip().upper()
+    if v not in MODUL_REZIMI:
+        raise ValidationBusinessError(f"{label} mora biti jedna od vrednosti: {', '.join(MODUL_REZIMI)}.")
+    return v
+
+
+def validate_code_list(raw: str, label: str) -> str:
+    """Lista sifara odvojenih zarezom (org. jedinice ili platni brojevi). Svaka sifra je
+    1-50 znakova (slova, cifre, '_' ili '-'), najvise 100 sifara, bez duplikata.
+    Vraca normalizovan zapis bez razmaka, npr. '318,401'."""
+    if len(raw) > _CODE_LIST_MAX_LEN:
+        raise ValidationBusinessError(f"{label} je predugačak (maksimalno {_CODE_LIST_MAX_LEN} karaktera).")
+    items = [part.strip() for part in raw.split(",") if part.strip()]
+    if not items:
+        raise ValidationBusinessError(f"{label} ne sme biti prazan (koristi null).")
+    if len(items) > _CODE_LIST_MAX_ITEMS:
+        raise ValidationBusinessError(f"{label} može imati najviše {_CODE_LIST_MAX_ITEMS} šifara.")
+    for item in items:
+        if not _CODE_LIST_ITEM_RE.fullmatch(item):
+            raise ValidationBusinessError(
+                f"{label} sadrži neispravnu šifru. Dozvoljena su slova, cifre, '_' i '-', do 50 znakova."
+            )
+    unique: list[str] = []
+    for item in items:
+        if item not in unique:
+            unique.append(item)
+    return ",".join(unique)
+
+
 @dataclasses.dataclass(frozen=True)
 class ConfigDefinition:
     tip_podatka: str
@@ -181,8 +219,52 @@ CONFIGURATION_DEFINITIONS: dict[str, ConfigDefinition] = {
         validate=partial(validate_https_url, label="DOWNLOAD_URL"),
         nullable=True,
     ),
+    "MODUL_POGODNOSTI": ConfigDefinition(
+        tip_podatka=TIP_TEKST,
+        default="ISKLJUCEN",
+        opis="Modul Moje pogodnosti: ISKLJUCEN, PILOT (samo pilot) ili SVI.",
+        validate=partial(validate_module_mode, label="MODUL_POGODNOSTI"),
+    ),
+    "MODUL_PITAJ_HR": ConfigDefinition(
+        tip_podatka=TIP_TEKST,
+        default="ISKLJUCEN",
+        opis="Modul Pitaj HR: ISKLJUCEN, PILOT (samo pilot) ili SVI.",
+        validate=partial(validate_module_mode, label="MODUL_PITAJ_HR"),
+    ),
+    "MODUL_KVIZ": ConfigDefinition(
+        tip_podatka=TIP_TEKST,
+        default="ISKLJUCEN",
+        opis="Modul Puls izazov (nedeljni kviz): ISKLJUCEN, PILOT (samo pilot) ili SVI.",
+        validate=partial(validate_module_mode, label="MODUL_KVIZ"),
+    ),
+    "MODUL_IGRA": ConfigDefinition(
+        tip_podatka=TIP_TEKST,
+        default="ISKLJUCEN",
+        opis="Modul Gomex putanja (igra dana): ISKLJUCEN, PILOT (samo pilot) ili SVI.",
+        validate=partial(validate_module_mode, label="MODUL_IGRA"),
+    ),
+    "MODUL_ZAHVALNICE": ConfigDefinition(
+        tip_podatka=TIP_TEKST,
+        default="ISKLJUCEN",
+        opis="Modul Hvala, kolega: ISKLJUCEN, PILOT (samo pilot) ili SVI.",
+        validate=partial(validate_module_mode, label="MODUL_ZAHVALNICE"),
+    ),
+    "MODUL_PILOT_ORGJED": ConfigDefinition(
+        tip_podatka=TIP_TEKST,
+        default=None,
+        opis="Šifre org. jedinica za pilot novih modula, odvojene zarezom (npr. 318).",
+        validate=partial(validate_code_list, label="MODUL_PILOT_ORGJED"),
+        nullable=True,
+    ),
+    "MODUL_PILOT_PLATNI_BROJ": ConfigDefinition(
+        tip_podatka=TIP_TEKST,
+        default=None,
+        opis="Platni brojevi za pilot novih modula (npr. testeri iz centrale), odvojeni zarezom.",
+        validate=partial(validate_code_list, label="MODUL_PILOT_PLATNI_BROJ"),
+        nullable=True,
+    ),
 }
 
 # Stabilan redosled (insertion order dict-a je garantovan od Python 3.7) - koristi se
-# za GET listu (uvek svih 9 kljuceva u istom redosledu) i za batch citanje.
+# za GET listu (uvek svi kljucevi u istom redosledu) i za batch citanje.
 ALLOWED_CONFIGURATION_KEYS: tuple[str, ...] = tuple(CONFIGURATION_DEFINITIONS.keys())
