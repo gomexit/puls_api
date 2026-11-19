@@ -29,12 +29,12 @@ def _admin():
 
 
 # =============================================================== GET / lista
-def test_list_configuration_returns_exactly_9_keys_in_stable_order():
+def test_list_configuration_returns_all_16_keys_in_stable_order():
     service, *_ = _service()
     result = service.list_configuration()
     keys = [item["kljuc"] for item in result["items"]]
     assert keys == list(ALLOWED_CONFIGURATION_KEYS)
-    assert len(keys) == 9
+    assert len(keys) == 16
 
 
 def test_list_configuration_missing_row_uses_default():

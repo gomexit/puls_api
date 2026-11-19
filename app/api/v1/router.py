@@ -5,6 +5,7 @@ from app.api.v1 import (
     admin_configuration,
     admin_dashboard,
     admin_ideas,
+    admin_images,
     admin_notifications,
     admin_onboarding_documents,
     admin_survey_automations,
@@ -13,7 +14,9 @@ from app.api.v1 import (
     admin_users,
     app_version,
     auth,
+    home,
     ideas,
+    images,
     notifications,
     onboarding_documents,
     push,
@@ -39,3 +42,6 @@ api_router.include_router(admin_configuration.router)
 api_router.include_router(app_version.router)
 api_router.include_router(onboarding_documents.router)
 api_router.include_router(admin_onboarding_documents.router)
+api_router.include_router(home.router)
+api_router.include_router(images.router)
+api_router.include_router(admin_images.router)

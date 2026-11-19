@@ -63,6 +63,9 @@ class Settings(BaseSettings):
     # kao BLOB i servira iz memorije, pa je gornja granica namerno ogranicena.
     onboarding_pdf_max_size_mb: int = Field(default=20, ge=1, le=100)
 
+    # Modul SLIKE (faza 0): najveca velicina upload-a u MB, pre smanjivanja na 1200 px.
+    image_max_size_mb: int = Field(default=5, ge=1, le=20)
+
     @property
     def is_production(self) -> bool:
         return self.app_env.strip().lower() == PRODUCTION_ENV

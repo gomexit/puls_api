@@ -43,6 +43,17 @@ AKCIJA_TIPOVI = (AKCIJA_NONE, AKCIJA_SURVEY, AKCIJA_IDEA, AKCIJA_URL, AKCIJA_IDE
 AKCIJE_SA_RESURSOM = (AKCIJA_SURVEY, AKCIJA_IDEA, AKCIJA_IDEA_CYCLE)
 AKCIJE_SA_URL = (AKCIJA_URL,)
 
+# --- Tipovi akcije novih modula (sql/010_osnova_module.sql) ---
+# Rezervisani u bazi za faze 1-5. NAMERNO nisu u AKCIJA_TIPOVI: admin ih jos ne
+# moze koristiti u rucnim obavestenjima, jer odgovarajuci moduli (i provera da
+# resurs postoji) stizu tek sa svojom fazom. Aplikacije ih vec znaju da otvore.
+AKCIJA_BENEFIT = "BENEFIT"  # RESURS_ID = PULS_POGODNOSTI.ID
+AKCIJA_HR_QUESTION = "HR_QUESTION"  # RESURS_ID = PULS_HR_PITANJA.ID
+AKCIJA_QUIZ = "QUIZ"  # RESURS_ID = PULS_KVIZOVI.ID
+AKCIJA_KUDOS = "KUDOS"  # RESURS_ID = PULS_ZAHVALNICE.ID
+AKCIJA_GAME = "GAME"  # bez RESURS_ID - uvek igra dana
+AKCIJE_NOVIH_MODULA = (AKCIJA_BENEFIT, AKCIJA_HR_QUESTION, AKCIJA_QUIZ, AKCIJA_KUDOS, AKCIJA_GAME)
+
 # --- Tipovi cilja ---
 CILJ_SVI = "SVI"
 CILJ_CENTRALA = "CENTRALA"
