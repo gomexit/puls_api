@@ -225,8 +225,9 @@ def test_admin_rename_and_archive_rules(client, monkeypatch):
     assert [e["sifra_akcije"] for e in env.audit.entries] == ["ADMIN_IMAGE_RENAMED", "ADMIN_IMAGE_ARCHIVED"]
 
 
-def test_openapi_documents_image_routes(client):
-    paths = client.get("/openapi.json").json()["paths"]
+def test_openapi_documents_image_routes():
+    # /openapi.json je na produkciji iskljucen; sema se i dalje generise iz aplikacije.
+    paths = app.openapi()["paths"]
     assert "/api/v1/images/{image_id}" in paths
     assert "/api/v1/admin/images" in paths
     assert "/api/v1/admin/images/{image_id}/status" in paths

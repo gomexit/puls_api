@@ -1,4 +1,5 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
 from sqlalchemy import text
 
 from app.api.v1.router import api_router
@@ -16,7 +17,48 @@ settings = get_settings()
 # Provisioning runs as a dedicated worker instead:
 #   one-shot:  python -m app.scripts.provision_users
 #   periodic:  python -m app.scripts.provision_worker
-app = FastAPI(title=settings.app_name)
+
+
+def docs_urls(enabled: bool) -> dict:
+    """Swagger, ReDoc i OpenAPI sema postoje samo kad su izricito ukljuceni."""
+    if enabled:
+        return {"docs_url": "/docs", "redoc_url": "/redoc", "openapi_url": "/openapi.json"}
+    return {"docs_url": None, "redoc_url": None, "openapi_url": None}
+
+
+app = FastAPI(title=settings.app_name, **docs_urls(settings.api_docs_enabled))
+
+# Zaglavlja koja reverse proxy dodaje; njihovo prisustvo znaci da zahtev dolazi spolja.
+PROXY_HEADERS = (b"x-forwarded-for", b"x-forwarded-prefix", b"x-forwarded-proto", b"x-real-ip", b"forwarded")
+
+SECURITY_HEADERS = (
+    (b"strict-transport-security", b"max-age=31536000; includeSubDomains"),
+    (b"x-content-type-options", b"nosniff"),
+    (b"x-frame-options", b"DENY"),
+    (b"referrer-policy", b"no-referrer"),
+)
+
+
+class SecurityHeadersMiddleware:
+    """Dodaje osnovna bezbednosna zaglavlja na svaki HTTP odgovor."""
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        async def send_with_headers(message):
+            if message["type"] == "http.response.start":
+                headers = list(message.get("headers", []))
+                present = {k.lower() for k, _ in headers}
+                headers.extend((k, v) for k, v in SECURITY_HEADERS if k not in present)
+                message["headers"] = headers
+            await send(message)
+
+        await self.app(scope, receive, send_with_headers)
 
 
 class ForwardedPrefixMiddleware:
@@ -35,13 +77,21 @@ class ForwardedPrefixMiddleware:
 
 
 app.add_middleware(ForwardedPrefixMiddleware)
+app.add_middleware(SecurityHeadersMiddleware)
 
 register_exception_handlers(app)
 app.include_router(api_router)
 
 
-@app.get("/health")
-def health() -> dict:
+def is_proxied(request: Request) -> bool:
+    return any(name in PROXY_HEADERS for name, _ in request.scope.get("headers", []))
+
+
+@app.get("/health", include_in_schema=False, response_model=None)
+def health(request: Request) -> dict | JSONResponse:
+    # Kroz proxy (spolja) se ponasa kao nepostojeca ruta, osim ako je HEALTH_PUBLIC=true.
+    if not settings.health_public and is_proxied(request):
+        return JSONResponse(status_code=404, content={"detail": "Not Found"})
     db_ok = True
     try:
         db = SessionLocal()
