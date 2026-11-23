@@ -66,6 +66,13 @@ class Settings(BaseSettings):
     # Modul SLIKE (faza 0): najveca velicina upload-a u MB, pre smanjivanja na 1200 px.
     image_max_size_mb: int = Field(default=5, ge=1, le=20)
 
+    # Bezbednost: Swagger (/docs), ReDoc (/redoc) i /openapi.json su podrazumevano
+    # ISKLJUCENI. Ukljuciti samo lokalno ili na test okruzenju (API_DOCS_ENABLED=true).
+    api_docs_enabled: bool = False
+    # /health je podrazumevano dostupan samo direktno (npr. http://127.0.0.1:8000/health),
+    # a ne kroz reverse proxy. HEALTH_PUBLIC=true ga otvara i kroz proxy.
+    health_public: bool = False
+
     @property
     def is_production(self) -> bool:
         return self.app_env.strip().lower() == PRODUCTION_ENV
