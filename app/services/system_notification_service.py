@@ -15,12 +15,28 @@ from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
 from app.core.configuration_definitions import validate_https_url
+from app.core.modules import (
+    MODUL_PILOT,
+    MODUL_SVI,
+    PILOT_ORGJED_KEY,
+    PILOT_PLATNI_BROJ_KEY,
+    normalize_mode,
+    parse_code_list,
+)
 from app.core.exceptions import ValidationBusinessError
 from app.models.anketa import ANKETA_STATUS_ACTIVE, ANKETA_STATUS_CLOSED
 from app.models.korisnik import STATUS_NALOGA_OMOGUCEN, STATUS_ZAPOSLENJA_AKTIVAN
 from app.models.idea_ciklus import IdeaCiklus
 from app.models.ideja import IDEJA_STATUS_NAGRADJENA, IDEJA_STATUS_TOP_10
-from app.models.obavestenje import AKCIJA_IDEA, AKCIJA_IDEA_CYCLE, AKCIJA_NONE, AKCIJA_SURVEY, AKCIJA_URL
+from app.models.kviz import KVIZ_CILJ_ORGJED, KVIZ_CILJ_PLATNI_BROJ, Kviz
+from app.models.obavestenje import (
+    AKCIJA_IDEA,
+    AKCIJA_IDEA_CYCLE,
+    AKCIJA_NONE,
+    AKCIJA_QUIZ,
+    AKCIJA_SURVEY,
+    AKCIJA_URL,
+)
 from app.models.sistemski_dogadjaj import (
     DOGADJAJ_STATUS_FAILED,
     DOGADJAJ_STATUS_PENDING,
@@ -32,6 +48,8 @@ from app.models.sistemski_dogadjaj import (
     DOGADJAJ_TIP_IDEA_NAGRADJENA,
     DOGADJAJ_TIP_IDEA_TOP_10,
     DOGADJAJ_TIP_ONBOARDING_SURVEY_AVAILABLE,
+    DOGADJAJ_TIP_QUIZ_ACTIVATED,
+    DOGADJAJ_TIP_QUIZ_EXPIRING,
     DOGADJAJ_TIP_SURVEY_ACTIVATED,
     DOGADJAJ_TIP_SURVEY_EXPIRING,
     SistemskiDogadjaj,
@@ -59,6 +77,7 @@ DOWNLOAD_URL_KEY = "DOWNLOAD_URL"
 CURRENT_VERSION_KEY = "CURRENT_VERSION"
 CURRENT_VERSION_FALLBACK = "1.0"
 SYSTEM_CATEGORY = "SISTEM"
+QUIZ_MODULE_KEY = "MODUL_KVIZ"
 MAX_BACKOFF_MIN = 60
 
 
@@ -150,6 +169,17 @@ class SystemNotificationService:
             f"APP_VERSION_CHANGED:{version}", DOGADJAJ_TIP_APP_VERSION_CHANGED, None, version, self._now()
         )
 
+    def enqueue_quiz_activated(self, kviz_id: int) -> bool:
+        return self.event_repo.enqueue_if_absent(
+            f"QUIZ_ACTIVATED:{kviz_id}", DOGADJAJ_TIP_QUIZ_ACTIVATED, kviz_id, None, self._now()
+        )
+
+    def enqueue_quiz_expiring(self, kviz_id: int, datum_do: datetime.datetime) -> bool:
+        iso = datum_do.isoformat()
+        return self.event_repo.enqueue_if_absent(
+            f"QUIZ_EXPIRING:{kviz_id}:{iso}", DOGADJAJ_TIP_QUIZ_EXPIRING, kviz_id, iso, self._now()
+        )
+
     # ============================================================= worker: otkrivanje
     def discover_events(self) -> dict:
         """Otkriva dogadjaje koje NIJE trigerovao direktan poslovni poziv: SCHEDULED
@@ -193,6 +223,15 @@ class SystemNotificationService:
             for ciklus in self.event_repo.find_cycles_expiring_within(now, window_end):
                 if self.enqueue_idea_cycle_expiring(ciklus.id, ciklus.datum_zavrsetka):
                     discovered += 1
+            # PULS IZAZOV: kviz objavljen unapred dobija QUIZ_ACTIVATED kad DATUM_OD prodje.
+            # Dok je modul ISKLJUCEN, PULS_KVIZ* tabele se ne citaju (bezbedno i pre sql/011).
+            if self._quiz_module_on():
+                for kviz in self.event_repo.find_quizzes_now_active(now):
+                    if self.enqueue_quiz_activated(int(kviz.id)):
+                        discovered += 1
+                for kviz in self.event_repo.find_quizzes_expiring_within(now, window_end):
+                    if self.enqueue_quiz_expiring(int(kviz.id), kviz.datum_do):
+                        discovered += 1
             self.db.commit()
         except Exception:
             self.db.rollback()
@@ -286,7 +325,71 @@ class SystemNotificationService:
             return self._resolve_app_version_changed(event)
         if event.tip_dogadjaja == DOGADJAJ_TIP_ONBOARDING_SURVEY_AVAILABLE:
             return self._resolve_onboarding_survey_available(event)
+        if event.tip_dogadjaja == DOGADJAJ_TIP_QUIZ_ACTIVATED:
+            return self._resolve_quiz(event, expiring=False)
+        if event.tip_dogadjaja == DOGADJAJ_TIP_QUIZ_EXPIRING:
+            return self._resolve_quiz(event, expiring=True)
         return None, None
+
+    # ------------------------------------------------------------ PULS IZAZOV
+    def _resolve_quiz(self, event: SistemskiDogadjaj, expiring: bool):
+        kviz = self.event_repo.get_quiz(event.resurs_id)
+        now = self._now()
+        if kviz is None or not kviz.is_open(now):
+            return None, None
+        # Stari podsetnik za rok koji vise ne vazi (produzen u medjuvremenu) - preskoci.
+        if expiring and event.vrednost != kviz.datum_do.isoformat():
+            return None, None
+        recipients = self._quiz_audience(kviz)
+        if expiring:
+            recipients -= self.event_repo.quiz_finished_user_ids(int(kviz.id))
+        if expiring:
+            naslov, kratak = "Puls izazov uskoro ističe", f"„{kviz.naziv}“ ističe uskoro."
+            sadrzaj = f"Još malo vremena za Puls izazov „{kviz.naziv}“. Odigrajte ga pre isteka."
+        else:
+            naslov, kratak = "Novi Puls izazov", f"„{kviz.naziv}“ je spreman."
+            sadrzaj = f"Novi Puls izazov „{kviz.naziv}“ je dostupan. Proverite koliko znate!"
+        content = {
+            "naslov": naslov,
+            "kratak_tekst": kratak,
+            "sadrzaj": sadrzaj,
+            "akcija_tip": AKCIJA_QUIZ,
+            "resurs_id": int(kviz.id),
+            "akcija_url": None,
+            "datum_isteka": kviz.datum_do,
+        }
+        return recipients, content
+
+    def _quiz_module_on(self) -> bool:
+        return normalize_mode(self.config.get_str(QUIZ_MODULE_KEY, "")) in (MODUL_SVI, MODUL_PILOT)
+
+    def _quiz_audience(self, kviz: Kviz) -> set[int]:
+        """Aktivni korisnici kojima je modul KVIZ ukljucen i koje pogadja ciljanje kviza."""
+        mode = normalize_mode(self.config.get_str(QUIZ_MODULE_KEY, ""))
+        if mode not in (MODUL_SVI, MODUL_PILOT):
+            return set()
+        audience = self.targeting.all_active_user_ids()
+        if mode == MODUL_PILOT:
+            audience &= self._ids_for(
+                parse_code_list(self.config.get_str(PILOT_ORGJED_KEY, "")),
+                parse_code_list(self.config.get_str(PILOT_PLATNI_BROJ_KEY, "")),
+            )
+        targets = self.event_repo.quiz_targets(int(kviz.id))
+        if targets:
+            orgjed = {v for t, v in targets if t == KVIZ_CILJ_ORGJED}
+            platni = {v for t, v in targets if t == KVIZ_CILJ_PLATNI_BROJ}
+            audience &= self._ids_for(orgjed, platni)
+        return audience
+
+    def _ids_for(self, orgjed_codes, platni_brojevi) -> set[int]:
+        ids: set[int] = set()
+        for code in orgjed_codes:
+            ids |= self.targeting.user_ids_by_orgjed(code)
+        for pb in platni_brojevi:
+            uid = self.targeting.user_id_by_platni_broj(pb)
+            if uid is not None:
+                ids.add(uid)
+        return ids
 
     def _resolve_onboarding_survey_available(self, event: SistemskiDogadjaj):
         # RESURS_ID sistemskog dogadjaja = UCESCE_ID (dogovoreno); ANKETA_ID iz ucesca

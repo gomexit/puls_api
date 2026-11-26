@@ -9,14 +9,17 @@ from app.repositories.module_access_repository import ModuleAccessRepository
 from app.schemas.home import HomeModuleOut, HomeSummaryResponse
 from app.services.home_summary_service import HomeSummaryService
 from app.services.module_access_service import ModuleAccessService
+from app.services.quiz_service import MODULE_CODE as QUIZ_MODULE_CODE
+from app.services.quiz_service import QuizService
 
 router = APIRouter(prefix="/home", tags=["Home"])
 
 
 def get_home_summary_service(db: Session = Depends(get_db)) -> HomeSummaryService:
-    return HomeSummaryService(
-        ModuleAccessService(ConfigurationRepository(db), ModuleAccessRepository(db))
-    )
+    access_repo = ModuleAccessRepository(db)
+    module_access = ModuleAccessService(ConfigurationRepository(db), access_repo)
+    quiz = QuizService(db, module_access=module_access, access_repository=access_repo)
+    return HomeSummaryService(module_access, badge_counters={QUIZ_MODULE_CODE: quiz.badge_count})
 
 
 @router.get(

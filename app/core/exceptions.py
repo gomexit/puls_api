@@ -348,6 +348,104 @@ class ImageArchivedError(PulsApiError):
     message = "Arhivirana slika se više ne može menjati."
 
 
+# --- Modul PULS IZAZOV (kviz) ---
+class QuizNotFoundError(PulsApiError):
+    # Isti odgovor za nepostojeci kviz i kviz koji zaposleni ne vidi.
+    code = "QUIZ_NOT_FOUND"
+    status_code = status.HTTP_404_NOT_FOUND
+    message = "Kviz nije pronađen ili nije dostupan."
+
+
+class QuizCategoryNotFoundError(PulsApiError):
+    code = "QUIZ_CATEGORY_NOT_FOUND"
+    status_code = status.HTTP_404_NOT_FOUND
+    message = "Kategorija pitanja nije pronađena."
+
+
+class QuizCategoryAlreadyExistsError(PulsApiError):
+    code = "QUIZ_CATEGORY_ALREADY_EXISTS"
+    status_code = status.HTTP_409_CONFLICT
+    message = "Kategorija sa ovom šifrom već postoji."
+
+
+class InvalidQuizStatusError(PulsApiError):
+    code = "INVALID_QUIZ_STATUS"
+    status_code = 422
+    message = "Nepoznat status kviza."
+
+
+class InvalidQuizStatusTransitionError(PulsApiError):
+    code = "INVALID_QUIZ_STATUS_TRANSITION"
+    status_code = status.HTTP_409_CONFLICT
+    message = "Ovaj prelaz statusa kviza nije dozvoljen."
+
+
+class QuizLockedError(PulsApiError):
+    code = "QUIZ_LOCKED"
+    status_code = status.HTTP_409_CONFLICT
+    message = "Objavljenom kvizu se menjaju samo naziv, opis i produženje roka."
+
+
+class QuizArchivedError(PulsApiError):
+    code = "QUIZ_ARCHIVED"
+    status_code = status.HTTP_409_CONFLICT
+    message = "Arhiviran kviz se više ne može menjati."
+
+
+class QuizPeriodOverlapError(PulsApiError):
+    code = "QUIZ_PERIOD_OVERLAP"
+    status_code = status.HTTP_409_CONFLICT
+    message = "Period se preklapa sa drugim objavljenim kvizom."
+
+
+class QuizNotReadyError(PulsApiError):
+    code = "QUIZ_NOT_READY"
+    status_code = 422
+    message = "Kviz nije spreman za objavu."
+
+
+class QuizAlreadyPlayedError(PulsApiError):
+    code = "QUIZ_ALREADY_PLAYED"
+    status_code = status.HTTP_409_CONFLICT
+    message = "Ovaj kviz ste već odigrali."
+
+
+class QuizAttemptNotFoundError(PulsApiError):
+    code = "QUIZ_ATTEMPT_NOT_FOUND"
+    status_code = status.HTTP_404_NOT_FOUND
+    message = "Pokušaj nije pronađen."
+
+
+class QuizTimeExpiredError(PulsApiError):
+    code = "QUIZ_TIME_EXPIRED"
+    status_code = status.HTTP_409_CONFLICT
+    message = "Vreme za kviz je isteklo."
+
+
+class QuizAttemptFinishedError(PulsApiError):
+    code = "QUIZ_ATTEMPT_FINISHED"
+    status_code = status.HTTP_409_CONFLICT
+    message = "Pokušaj je već završen."
+
+
+class QuizAttemptInProgressError(PulsApiError):
+    code = "QUIZ_ATTEMPT_IN_PROGRESS"
+    status_code = status.HTTP_409_CONFLICT
+    message = "Kviz je još u toku."
+
+
+class QuizQuestionAlreadyAnsweredError(PulsApiError):
+    code = "QUIZ_QUESTION_ALREADY_ANSWERED"
+    status_code = status.HTTP_409_CONFLICT
+    message = "Na ovo pitanje ste već odgovorili."
+
+
+class InvalidQuizAnswerError(PulsApiError):
+    code = "INVALID_QUIZ_ANSWER"
+    status_code = 422
+    message = "Pitanje ili odgovor ne pripadaju ovom kvizu."
+
+
 def register_exception_handlers(app: FastAPI) -> None:
     @app.exception_handler(PulsApiError)
     async def handle_puls_api_error(request: Request, exc: PulsApiError) -> JSONResponse:

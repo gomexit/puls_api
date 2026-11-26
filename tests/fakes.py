@@ -227,6 +227,12 @@ class FakeSystemNotificationService:
     def enqueue_app_version_changed(self, version):
         return self._record("enqueue_app_version_changed", version)
 
+    def enqueue_quiz_activated(self, kviz_id):
+        return self._record("enqueue_quiz_activated", kviz_id)
+
+    def enqueue_quiz_expiring(self, kviz_id, datum_do):
+        return self._record("enqueue_quiz_expiring", kviz_id, datum_do)
+
 
 class FakePushTokenRepository:
     """In-memory PULS_PUSH_TOKENI. Cuva se hash umesto oslanjanja na pun token u logu."""

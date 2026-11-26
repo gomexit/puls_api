@@ -122,6 +122,10 @@ class FakeSystemEventRepo:
         self.enqueue_calls: list[str] = []
         self.ucesca: dict[int, SimpleNamespace] = {}
         self.korisnici: dict[int, SimpleNamespace] = {}
+        # PULS IZAZOV
+        self.quizzes: dict[int, object] = {}
+        self.quiz_target_rows: dict[int, list[tuple[str, str]]] = {}
+        self.quiz_finished: dict[int, set[int]] = {}
 
     # --- setup helpers ---
     def seed_survey(self, anketa: SimpleNamespace, participants: list[tuple[int, str]] | None = None):
@@ -141,6 +145,27 @@ class FakeSystemEventRepo:
     def seed_ucesce(self, ucesce: SimpleNamespace):
         self.ucesca[ucesce.id] = ucesce
         return ucesce
+
+    def seed_quiz(self, kviz, targets=None, finished=None):
+        self.quizzes[int(kviz.id)] = kviz
+        self.quiz_target_rows[int(kviz.id)] = list(targets or [])
+        self.quiz_finished[int(kviz.id)] = set(finished or set())
+        return kviz
+
+    def find_quizzes_now_active(self, now):
+        return [k for k in self.quizzes.values() if k.is_open(now)]
+
+    def find_quizzes_expiring_within(self, now, window_end):
+        return [k for k in self.quizzes.values() if k.is_open(now) and k.datum_do <= window_end]
+
+    def get_quiz(self, kviz_id):
+        return self.quizzes.get(kviz_id)
+
+    def quiz_targets(self, kviz_id):
+        return list(self.quiz_target_rows.get(kviz_id, []))
+
+    def quiz_finished_user_ids(self, kviz_id):
+        return set(self.quiz_finished.get(kviz_id, set()))
 
     def seed_korisnik(self, korisnik: SimpleNamespace):
         self.korisnici[korisnik.id] = korisnik

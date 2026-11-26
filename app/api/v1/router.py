@@ -8,6 +8,7 @@ from app.api.v1 import (
     admin_images,
     admin_notifications,
     admin_onboarding_documents,
+    admin_quizzes,
     admin_survey_automations,
     admin_survey_results,
     admin_surveys,
@@ -20,6 +21,7 @@ from app.api.v1 import (
     notifications,
     onboarding_documents,
     push,
+    quizzes,
     surveys,
 )
 
@@ -45,3 +47,7 @@ api_router.include_router(admin_onboarding_documents.router)
 api_router.include_router(home.router)
 api_router.include_router(images.router)
 api_router.include_router(admin_images.router)
+api_router.include_router(quizzes.router)
+api_router.include_router(quizzes.attempts_router)
+api_router.include_router(admin_quizzes.router)
+api_router.include_router(admin_quizzes.categories_router)

@@ -16,6 +16,7 @@ from app.models.anketa_ucesce import AnketaUcesce
 from app.models.idea_ciklus import CIKLUS_STATUS_AKTIVAN, IdeaCiklus
 from app.models.ideja import Ideja
 from app.models.korisnik import Korisnik
+from app.models.kviz import KVIZ_STATUS_OBJAVLJEN, POKUSAJ_ZAVRSEN, Kviz, KvizCilj, KvizPokusaj
 from app.models.sistemski_dogadjaj import DOGADJAJ_STATUS_PENDING, SistemskiDogadjaj
 
 
@@ -121,7 +122,40 @@ class SystemEventRepository:
         )
         return list(self.db.execute(stmt).scalars().all())
 
+    def find_quizzes_now_active(self, now: datetime.datetime) -> list[Kviz]:
+        """Objavljeni kvizovi u periodu (DATUM_OD je prosao) - QUIZ_ACTIVATED je idempotentan."""
+        stmt = select(Kviz).where(
+            Kviz.status == KVIZ_STATUS_OBJAVLJEN,
+            Kviz.datum_od <= now,
+            Kviz.datum_do > now,
+        )
+        return list(self.db.execute(stmt).scalars().all())
+
+    def find_quizzes_expiring_within(
+        self, now: datetime.datetime, window_end: datetime.datetime
+    ) -> list[Kviz]:
+        stmt = select(Kviz).where(
+            Kviz.status == KVIZ_STATUS_OBJAVLJEN,
+            Kviz.datum_od <= now,
+            Kviz.datum_do > now,
+            Kviz.datum_do <= window_end,
+        )
+        return list(self.db.execute(stmt).scalars().all())
+
     # -------------------------------------------------------- resolucija resursa
+    def get_quiz(self, kviz_id: int) -> Kviz | None:
+        return self.db.get(Kviz, kviz_id)
+
+    def quiz_targets(self, kviz_id: int) -> list[tuple[str, str]]:
+        stmt = select(KvizCilj.tip_cilja, KvizCilj.vrednost).where(KvizCilj.kviz_id == kviz_id)
+        return [(t, v) for t, v in self.db.execute(stmt).all()]
+
+    def quiz_finished_user_ids(self, kviz_id: int) -> set[int]:
+        stmt = select(KvizPokusaj.korisnik_id).where(
+            KvizPokusaj.kviz_id == kviz_id, KvizPokusaj.status == POKUSAJ_ZAVRSEN
+        )
+        return {int(i) for i in self.db.execute(stmt).scalars().all()}
+
     def get_survey(self, survey_id: int) -> Anketa | None:
         return self.db.get(Anketa, survey_id)
 

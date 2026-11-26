@@ -170,8 +170,11 @@ def test_home_summary_lists_all_modules_in_order(client):
 # ======================================================= rezervisane vrednosti
 def test_new_action_and_event_types_are_reserved_not_yet_usable():
     assert set(AKCIJE_NOVIH_MODULA) == {"BENEFIT", "HR_QUESTION", "QUIZ", "KUDOS", "GAME"}
+    # Admin obavestenja jos ne nude akcije novih modula (QUIZ salje samo sistem).
     assert not set(AKCIJE_NOVIH_MODULA) & set(AKCIJA_TIPOVI)
     assert not set(DOGADJAJ_TIPOVI_NOVIH_MODULA) & set(DOGADJAJ_TIPOVI)
+    # PULS IZAZOV: worker obradjuje QUIZ_* dogadjaje.
+    assert {"QUIZ_ACTIVATED", "QUIZ_EXPIRING"} <= set(DOGADJAJ_TIPOVI)
 
 
 # ================================================================ Oracle upiti
