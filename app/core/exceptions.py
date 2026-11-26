@@ -446,6 +446,31 @@ class InvalidQuizAnswerError(PulsApiError):
     message = "Pitanje ili odgovor ne pripadaju ovom kvizu."
 
 
+# --- Modul GOMEX PUTANJA (igra) ---
+class GameNotAvailableError(PulsApiError):
+    code = "GAME_NOT_AVAILABLE"
+    status_code = status.HTTP_404_NOT_FOUND
+    message = "Igra trenutno nije dostupna."
+
+
+class GameNotStartedError(PulsApiError):
+    code = "GAME_NOT_STARTED"
+    status_code = status.HTTP_409_CONFLICT
+    message = "Igra nije pokrenuta. Pokrenite današnji nivo."
+
+
+class GameLevelExpiredError(PulsApiError):
+    code = "GAME_LEVEL_EXPIRED"
+    status_code = status.HTTP_409_CONFLICT
+    message = "Ovaj nivo je istekao. Počinje novi dan, igrajte današnji nivo."
+
+
+class GameInvalidPathError(PulsApiError):
+    code = "GAME_INVALID_PATH"
+    status_code = 422
+    message = "Putanja nije ispravno rešenje."
+
+
 def register_exception_handlers(app: FastAPI) -> None:
     @app.exception_handler(PulsApiError)
     async def handle_puls_api_error(request: Request, exc: PulsApiError) -> JSONResponse:

@@ -1,7 +1,7 @@
 """Pocetni ekran "Moj kutak" (faza 0): jedan poziv vraca koje module korisnik vidi.
 
 Brojevi novih stavki se dodaju sa svakim modulom (badge_counters); modul bez brojaca
-ili iskljucen modul ima 0. PULS IZAZOV: 1 dok aktivan kviz nije odigran. Servis nema upis i ne menja stanje."""
+ili iskljucen modul ima 0. PULS IZAZOV: 1 dok aktivan kviz nije odigran. GOMEX PUTANJA: 1 dok danasnji nivo nije resen. Servis nema upis i ne menja stanje."""
 
 from collections.abc import Callable, Mapping
 

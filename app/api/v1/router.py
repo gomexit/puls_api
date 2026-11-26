@@ -15,6 +15,7 @@ from app.api.v1 import (
     admin_users,
     app_version,
     auth,
+    game,
     home,
     ideas,
     images,
@@ -49,5 +50,6 @@ api_router.include_router(images.router)
 api_router.include_router(admin_images.router)
 api_router.include_router(quizzes.router)
 api_router.include_router(quizzes.attempts_router)
+api_router.include_router(game.router)
 api_router.include_router(admin_quizzes.router)
 api_router.include_router(admin_quizzes.categories_router)
