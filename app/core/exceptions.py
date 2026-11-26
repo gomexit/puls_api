@@ -519,6 +519,66 @@ class KudosInvalidStatusError(PulsApiError):
     message = "Nepoznat status zahvalnice."
 
 
+
+class HrQuestionNotAvailableError(PulsApiError):
+    code = "HR_QUESTION_NOT_AVAILABLE"
+    status_code = status.HTTP_404_NOT_FOUND
+    message = "Pitaj HR trenutno nije dostupan."
+
+
+class HrQuestionNotFoundError(PulsApiError):
+    code = "HR_QUESTION_NOT_FOUND"
+    status_code = status.HTTP_404_NOT_FOUND
+    message = "Pitanje ne postoji."
+
+
+class HrQuestionDailyLimitError(PulsApiError):
+    code = "HR_QUESTION_DAILY_LIMIT"
+    status_code = status.HTTP_409_CONFLICT
+    message = "Danas ste poslali najviše pitanja. Pokušajte ponovo sutra."
+
+
+class HrQuestionCategoryInvalidError(PulsApiError):
+    code = "HR_QUESTION_CATEGORY_INVALID"
+    status_code = 422
+    message = "Izaberite kategoriju sa liste."
+
+
+class HrQuestionFollowUpNotAllowedError(PulsApiError):
+    code = "HR_QUESTION_FOLLOW_UP_NOT_ALLOWED"
+    status_code = status.HTTP_409_CONFLICT
+    message = "Na ovo pitanje više ne možete da odgovorite. Postavite novo pitanje."
+
+
+class HrQuestionAnswerNotAllowedError(PulsApiError):
+    code = "HR_QUESTION_ANSWER_NOT_ALLOWED"
+    status_code = status.HTTP_409_CONFLICT
+    message = "Pitanje ne čeka odgovor (već je odgovoreno ili zatvoreno)."
+
+
+class HrQuestionInvalidStatusError(PulsApiError):
+    code = "INVALID_HR_QUESTION_STATUS"
+    status_code = 422
+    message = "Nepoznat status pitanja."
+
+
+class HrCategoryNotFoundError(PulsApiError):
+    code = "HR_CATEGORY_NOT_FOUND"
+    status_code = status.HTTP_404_NOT_FOUND
+    message = "Kategorija ne postoji."
+
+
+class HrCategoryAlreadyExistsError(PulsApiError):
+    code = "HR_CATEGORY_ALREADY_EXISTS"
+    status_code = status.HTTP_409_CONFLICT
+    message = "Kategorija sa tom šifrom već postoji."
+
+
+class HrFaqNotFoundError(PulsApiError):
+    code = "HR_FAQ_NOT_FOUND"
+    status_code = status.HTTP_404_NOT_FOUND
+    message = "Često pitanje ne postoji."
+
 def register_exception_handlers(app: FastAPI) -> None:
     @app.exception_handler(PulsApiError)
     async def handle_puls_api_error(request: Request, exc: PulsApiError) -> JSONResponse:

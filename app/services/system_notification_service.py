@@ -34,6 +34,7 @@ from app.models.ideja import IDEJA_STATUS_NAGRADJENA, IDEJA_STATUS_TOP_10
 from app.models.korisnik import STATUS_NALOGA_OMOGUCEN, STATUS_ZAPOSLENJA_AKTIVAN
 from app.models.kviz import KVIZ_CILJ_ORGJED, KVIZ_CILJ_PLATNI_BROJ, Kviz
 from app.models.obavestenje import (
+    AKCIJA_HR_QUESTION,
     AKCIJA_IDEA,
     AKCIJA_IDEA_CYCLE,
     AKCIJA_KUDOS,
@@ -48,6 +49,7 @@ from app.models.sistemski_dogadjaj import (
     DOGADJAJ_STATUS_PROCESSED,
     DOGADJAJ_STATUS_SKIPPED,
     DOGADJAJ_TIP_APP_VERSION_CHANGED,
+    DOGADJAJ_TIP_HR_QUESTION_ANSWERED,
     DOGADJAJ_TIP_IDEA_CYCLE_ACTIVATED,
     DOGADJAJ_TIP_IDEA_CYCLE_EXPIRING,
     DOGADJAJ_TIP_IDEA_NAGRADJENA,
@@ -63,6 +65,7 @@ from app.models.sistemski_dogadjaj import (
 from app.models.zahvalnica import POVODI, STATUS_OBJAVLJENA
 from app.repositories.audit_repository import AuditRepository
 from app.repositories.configuration_repository import ConfigurationRepository
+from app.repositories.hr_question_repository import HrQuestionRepository
 from app.repositories.kudos_repository import KudosRepository
 from app.repositories.module_access_repository import ModuleAccessRepository
 from app.repositories.notification_repository import NotificationRepository
@@ -346,6 +349,8 @@ class SystemNotificationService:
             return self._resolve_quiz(event, expiring=True)
         if event.tip_dogadjaja == DOGADJAJ_TIP_KUDOS_RECEIVED:
             return self._resolve_kudos(event)
+        if event.tip_dogadjaja == DOGADJAJ_TIP_HR_QUESTION_ANSWERED:
+            return self._resolve_hr_answer(event)
         return None, None
 
     # ------------------------------------------------------- HVALA, KOLEGA!
@@ -375,6 +380,33 @@ class SystemNotificationService:
             "datum_isteka": None,
         }
         return {int(z.primalac_id)}, content
+
+    # --------------------------------------------------------------- PITAJ HR
+    def _resolve_hr_answer(self, event: SistemskiDogadjaj):
+        """Zaposleni koji je postavio pitanje. Tekst odgovora ne ide u push (licni podaci)."""
+        repo = HrQuestionRepository(self.db)
+        p = repo.get_question(event.resurs_id) if event.resurs_id is not None else None
+        if p is None or p.datum_odgovora is None:
+            return None, None
+        korisnik = repo.users_by_ids({int(p.korisnik_id)}).get(int(p.korisnik_id))
+        if korisnik is None:
+            return None, None
+        if korisnik.status_zaposlenja != STATUS_ZAPOSLENJA_AKTIVAN or korisnik.status_naloga != STATUS_NALOGA_OMOGUCEN:
+            return None, None
+        access = ModuleAccessService(ConfigurationRepository(self.db), ModuleAccessRepository(self.db))
+        if not access.is_enabled(korisnik, "PITAJ_HR"):
+            return None, None
+        kategorija = repo.category_names().get(p.kategorija_sifra, p.kategorija_sifra)
+        content = {
+            "naslov": "Pitaj HR",
+            "kratak_tekst": "HR je odgovorio na vaše pitanje.",
+            "sadrzaj": f"Kategorija: {kategorija}. Otvorite pitanje da pročitate odgovor.",
+            "akcija_tip": AKCIJA_HR_QUESTION,
+            "resurs_id": int(p.id),
+            "akcija_url": None,
+            "datum_isteka": None,
+        }
+        return {int(p.korisnik_id)}, content
 
     # ------------------------------------------------------------ PULS IZAZOV
     def _resolve_quiz(self, event: SistemskiDogadjaj, expiring: bool):
