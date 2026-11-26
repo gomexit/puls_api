@@ -6,6 +6,7 @@ from app.api.v1 import (
     admin_dashboard,
     admin_ideas,
     admin_images,
+    admin_kudos,
     admin_notifications,
     admin_onboarding_documents,
     admin_quizzes,
@@ -19,6 +20,7 @@ from app.api.v1 import (
     home,
     ideas,
     images,
+    kudos,
     notifications,
     onboarding_documents,
     push,
@@ -51,5 +53,8 @@ api_router.include_router(admin_images.router)
 api_router.include_router(quizzes.router)
 api_router.include_router(quizzes.attempts_router)
 api_router.include_router(game.router)
+api_router.include_router(kudos.router)
+api_router.include_router(kudos.colleagues_router)
+api_router.include_router(admin_kudos.router)
 api_router.include_router(admin_quizzes.router)
 api_router.include_router(admin_quizzes.categories_router)

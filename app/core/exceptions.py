@@ -471,6 +471,54 @@ class GameInvalidPathError(PulsApiError):
     message = "Putanja nije ispravno rešenje."
 
 
+class KudosNotAvailableError(PulsApiError):
+    code = "KUDOS_NOT_AVAILABLE"
+    status_code = status.HTTP_404_NOT_FOUND
+    message = "Zahvalnice trenutno nisu dostupne."
+
+
+class KudosNotFoundError(PulsApiError):
+    code = "KUDOS_NOT_FOUND"
+    status_code = status.HTTP_404_NOT_FOUND
+    message = "Zahvalnica ne postoji."
+
+
+class KudosSelfError(PulsApiError):
+    code = "KUDOS_SELF"
+    status_code = 422
+    message = "Ne možete se zahvaliti sami sebi."
+
+
+class KudosRecipientInvalidError(PulsApiError):
+    code = "KUDOS_RECIPIENT_INVALID"
+    status_code = 422
+    message = "Ovom kolegi trenutno ne možete poslati zahvalnicu."
+
+
+class KudosInappropriateError(PulsApiError):
+    code = "KUDOS_INAPPROPRIATE"
+    status_code = 422
+    message = "Tekst sadrži neprimerene reči. Izmenite ga i pošaljite ponovo."
+
+
+class KudosDailyLimitError(PulsApiError):
+    code = "KUDOS_DAILY_LIMIT"
+    status_code = status.HTTP_409_CONFLICT
+    message = "Danas ste poslali najviše zahvalnica. Pokušajte ponovo sutra."
+
+
+class KudosCannotReportError(PulsApiError):
+    code = "KUDOS_CANNOT_REPORT"
+    status_code = 422
+    message = "Ne možete prijaviti svoju zahvalnicu."
+
+
+class KudosInvalidStatusError(PulsApiError):
+    code = "INVALID_KUDOS_STATUS"
+    status_code = 422
+    message = "Nepoznat status zahvalnice."
+
+
 def register_exception_handlers(app: FastAPI) -> None:
     @app.exception_handler(PulsApiError)
     async def handle_puls_api_error(request: Request, exc: PulsApiError) -> JSONResponse:

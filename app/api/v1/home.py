@@ -10,6 +10,8 @@ from app.schemas.home import HomeModuleOut, HomeSummaryResponse
 from app.services.game_service import MODULE_CODE as GAME_MODULE_CODE
 from app.services.game_service import GameService
 from app.services.home_summary_service import HomeSummaryService
+from app.services.kudos_service import MODULE_CODE as KUDOS_MODULE_CODE
+from app.services.kudos_service import KudosService
 from app.services.module_access_service import ModuleAccessService
 from app.services.quiz_service import MODULE_CODE as QUIZ_MODULE_CODE
 from app.services.quiz_service import QuizService
@@ -22,9 +24,14 @@ def get_home_summary_service(db: Session = Depends(get_db)) -> HomeSummaryServic
     module_access = ModuleAccessService(ConfigurationRepository(db), access_repo)
     quiz = QuizService(db, module_access=module_access, access_repository=access_repo)
     game = GameService(db, module_access=module_access)
+    kudos = KudosService(db, module_access=module_access)
     return HomeSummaryService(
         module_access,
-        badge_counters={QUIZ_MODULE_CODE: quiz.badge_count, GAME_MODULE_CODE: game.badge_count},
+        badge_counters={
+            QUIZ_MODULE_CODE: quiz.badge_count,
+            GAME_MODULE_CODE: game.badge_count,
+            KUDOS_MODULE_CODE: kudos.badge_count,
+        },
     )
 
 

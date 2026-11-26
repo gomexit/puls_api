@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
 from app.core.configuration_definitions import validate_https_url
+from app.core.exceptions import ValidationBusinessError
 from app.core.modules import (
     MODUL_PILOT,
     MODUL_SVI,
@@ -23,15 +24,19 @@ from app.core.modules import (
     normalize_mode,
     parse_code_list,
 )
-from app.core.exceptions import ValidationBusinessError
-from app.models.anketa import ANKETA_STATUS_ACTIVE, ANKETA_STATUS_CLOSED
-from app.models.korisnik import STATUS_NALOGA_OMOGUCEN, STATUS_ZAPOSLENJA_AKTIVAN
+from app.models.anketa import (
+    ANKETA_STATUS_ACTIVE,
+    ANKETA_STATUS_CLOSED,
+    UCESCE_SUBMITTED,
+)
 from app.models.idea_ciklus import IdeaCiklus
 from app.models.ideja import IDEJA_STATUS_NAGRADJENA, IDEJA_STATUS_TOP_10
+from app.models.korisnik import STATUS_NALOGA_OMOGUCEN, STATUS_ZAPOSLENJA_AKTIVAN
 from app.models.kviz import KVIZ_CILJ_ORGJED, KVIZ_CILJ_PLATNI_BROJ, Kviz
 from app.models.obavestenje import (
     AKCIJA_IDEA,
     AKCIJA_IDEA_CYCLE,
+    AKCIJA_KUDOS,
     AKCIJA_NONE,
     AKCIJA_QUIZ,
     AKCIJA_SURVEY,
@@ -47,6 +52,7 @@ from app.models.sistemski_dogadjaj import (
     DOGADJAJ_TIP_IDEA_CYCLE_EXPIRING,
     DOGADJAJ_TIP_IDEA_NAGRADJENA,
     DOGADJAJ_TIP_IDEA_TOP_10,
+    DOGADJAJ_TIP_KUDOS_RECEIVED,
     DOGADJAJ_TIP_ONBOARDING_SURVEY_AVAILABLE,
     DOGADJAJ_TIP_QUIZ_ACTIVATED,
     DOGADJAJ_TIP_QUIZ_EXPIRING,
@@ -54,19 +60,28 @@ from app.models.sistemski_dogadjaj import (
     DOGADJAJ_TIP_SURVEY_EXPIRING,
     SistemskiDogadjaj,
 )
-from app.models.anketa import UCESCE_SUBMITTED
+from app.models.zahvalnica import POVODI, STATUS_OBJAVLJENA
 from app.repositories.audit_repository import AuditRepository
 from app.repositories.configuration_repository import ConfigurationRepository
+from app.repositories.kudos_repository import KudosRepository
+from app.repositories.module_access_repository import ModuleAccessRepository
 from app.repositories.notification_repository import NotificationRepository
-from app.repositories.notification_targeting_repository import NotificationTargetingRepository
+from app.repositories.notification_targeting_repository import (
+    NotificationTargetingRepository,
+)
+from app.repositories.onboarding_automation_repository import (
+    OnboardingAutomationRepository,
+)
 from app.repositories.push_delivery_repository import PushDeliveryRepository
-from app.repositories.onboarding_automation_repository import OnboardingAutomationRepository
 from app.repositories.survey_repository import SurveyRepository
 from app.repositories.system_event_repository import SystemEventRepository
 from app.services.audit_service import AuditService
 from app.services.configuration_service import ConfigurationService
+from app.services.module_access_service import ModuleAccessService
 from app.services.notification_publishing_service import NotificationPublishingService
-from app.services.onboarding_survey_assignment_service import OnboardingSurveyAssignmentService
+from app.services.onboarding_survey_assignment_service import (
+    OnboardingSurveyAssignmentService,
+)
 
 logger = logging.getLogger("puls.system_notifications")
 
@@ -329,7 +344,37 @@ class SystemNotificationService:
             return self._resolve_quiz(event, expiring=False)
         if event.tip_dogadjaja == DOGADJAJ_TIP_QUIZ_EXPIRING:
             return self._resolve_quiz(event, expiring=True)
+        if event.tip_dogadjaja == DOGADJAJ_TIP_KUDOS_RECEIVED:
+            return self._resolve_kudos(event)
         return None, None
+
+    # ------------------------------------------------------- HVALA, KOLEGA!
+    def _resolve_kudos(self, event: SistemskiDogadjaj):
+        """Primalac objavljene zahvalnice, ako mu je modul i dalje ukljucen."""
+        repo = KudosRepository(self.db)
+        z = repo.get(event.resurs_id) if event.resurs_id is not None else None
+        if z is None or z.status != STATUS_OBJAVLJENA:
+            return None, None
+        users = repo.users_by_ids({int(z.posiljalac_id), int(z.primalac_id)})
+        primalac, posiljalac = users.get(int(z.primalac_id)), users.get(int(z.posiljalac_id))
+        if primalac is None or posiljalac is None:
+            return None, None
+        if primalac.status_zaposlenja != STATUS_ZAPOSLENJA_AKTIVAN or primalac.status_naloga != STATUS_NALOGA_OMOGUCEN:
+            return None, None
+        access = ModuleAccessService(ConfigurationRepository(self.db), ModuleAccessRepository(self.db))
+        if not access.is_enabled(primalac, "ZAHVALNICE"):
+            return None, None
+        ime = f"{posiljalac.ime} {posiljalac.prezime}".strip()
+        content = {
+            "naslov": "Hvala, kolega!",
+            "kratak_tekst": f"{ime} vam šalje zahvalnicu.",
+            "sadrzaj": f"{POVODI.get(z.povod, z.povod)}: {z.tekst}",
+            "akcija_tip": AKCIJA_KUDOS,
+            "resurs_id": int(z.id),
+            "akcija_url": None,
+            "datum_isteka": None,
+        }
+        return {int(z.primalac_id)}, content
 
     # ------------------------------------------------------------ PULS IZAZOV
     def _resolve_quiz(self, event: SistemskiDogadjaj, expiring: bool):
